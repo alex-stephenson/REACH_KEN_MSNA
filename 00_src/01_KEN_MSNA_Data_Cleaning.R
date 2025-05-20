@@ -14,6 +14,8 @@ date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 # ──────────────────────────────────────────────────────────────────────────────
 
 asset_id <- "a7Ex9v6jKQT4aHtL9ag8A2"
+asset <- robotoolbox::kobo_asset(asset_id)
+test <- robotoolbox::kobo_data(asset, progress = T, select_multiple_sep = "/")
 
 raw_kobo <- ImpactFunctions::get_kobo_data(asset_id = asset_id, un = "alex_stephenson")
 
@@ -180,8 +182,6 @@ checked_main_data <-  main_data %>%
 main_cleaning_log <-  checked_main_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    dataset = "checked_dataset",
-    cleaning_log = "cleaning_log",
     information_to_add = c("camp","sub_camp", "today","enum_id")
   )
 
@@ -212,6 +212,203 @@ purrr::walk2(roster_outputs, roster_uuids$name, ~assign(.y, .x, envir = .GlobalE
 # ──────────────────────────────────────────────────────────────────────────────
 #  HH Roaster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
+
+excluded_questions_in_data <- intersect(colnames(roster), excluded_questions)
+
+# Define the pattern for columns you want to exclude
+exclude_patterns <- c("geopoint", "gps", "_index", "_submit", "submission", "_sample_", "^_id$", "^rand", "^_index$","_n","enum_id", "ind_potentially_hoh")
+
+# Use `matches` with `|` to combine patterns
+outlier_cols_not_4_checking <- roster %>%
+  select(matches(paste(exclude_patterns, collapse = "|"))) %>%
+  colnames()
+
+checked_hh_roster <- roster %>%
+  check_value(
+  uuid_column = "uuid",
+  element_name = "checked_dataset",
+  values_to_look = c(-999,-1)
+) %>%
+  check_outliers(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    kobo_survey = questions,
+    kobo_choices = choices,
+    cols_to_add_cleaning_log = NULL,
+    strongness_factor = 1.5,
+    minimum_unique_value_of_variable = NULL,
+    remove_choice_multiple = TRUE,
+    sm_separator = "/",
+    columns_not_to_check = c(excluded_questions_in_data,outlier_cols_not_4_checking)
+  )
+
+hh_roster_cleaning_log <-  checked_hh_roster %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    information_to_add = c("camp","sub_camp", "today","enum_id")
+  )
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Civil Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+checked_civil_data <- civil %>%
+    check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(civil|>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains(".")))
+  )
+
+civil_cleaning_log <-  checked_civil_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Shocks Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+
+shocks_loop_data <- shocks_loop %>%
+    check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(shocks_loop|>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains(".")))
+  )
+
+shocks_loop_cleaning_log <-  shocks_loop_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Health Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+df_list_logical_checks_health <- read_csv("02_input/01_logical_checks/check_list_health.csv")
+
+checked_health_data <- health_ind %>%
+    check_duplicate(
+    uuid_column = "uuid",
+    columns_to_check = c("uuid","health_instance_name")
+  ) %>%
+  check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(health_ind|>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains(".")))
+
+
+  ) %>%
+  # Check for "I don't know" responses in numerical questions
+  check_value(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    values_to_look = c(-999,-1)
+  ) %>%
+  check_logical_with_list(uuid_column = "uuid",
+                          list_of_check = df_list_logical_checks_health,
+                          check_id_column = "check_id",
+                          check_to_perform_column = "check_to_perform",
+                          columns_to_clean_column = "columns_to_clean",
+                          description = "description",
+                          bind_checks = TRUE)
+
+health_cleaning_log <-  checked_health_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    dataset = "checked_dataset",
+    cleaning_log = "cleaning_log",
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Vaccine Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+df_list_logical_checks_vaccine <- read_csv("02_input/01_logical_checks/check_list_vaccine.csv")
+
+checked_child_vacination_data <- vaccine %>%
+  check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(vaccine|>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains(".")))
+  ) %>%
+  check_value(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    values_to_look = c( -999,-1)
+  ) %>%
+  check_logical_with_list(uuid_column = "uuid",
+                          list_of_check = df_list_logical_checks_vaccine,
+                          check_id_column = "check_id",
+                          check_to_perform_column = "check_to_perform",
+                          columns_to_clean_column = "columns_to_clean",
+                          description = "description",
+                          bind_checks = TRUE)
+
+child_vacination_cleaning_log <-  checked_child_vacination_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    dataset = "checked_dataset",
+    cleaning_log = "cleaning_log",
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Nutrition Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+checked_nutrition_data <- nut_ind %>%
+  check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(nut_ind |>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains(".")))
+
+  )
+
+utrition_cleaning_log <-  checked_nutrition_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Child feeding Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
+checked_child_feeding_data <-child_feeding %>%
+  check_others(
+    uuid_column = "uuid",
+    columns_to_check = names(child_feeding|>
+                               dplyr::select(ends_with("_other")) |>
+                               dplyr::select(-contains("."))))
+
+child_feeding_cleaning_log <-  checked_child_feeding_data %>%
+  create_combined_log() %>%
+  add_info_to_cleaning_log(
+    information_to_add = c("camp","sub_camp","today","enum_id")
+  )
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Education feeding Roster data cleaning
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 
 
