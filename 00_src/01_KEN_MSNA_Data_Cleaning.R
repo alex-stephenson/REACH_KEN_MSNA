@@ -8,7 +8,7 @@ library(ImpactFunctions)
 library(robotoolbox)
 library(healthyr)
 
-date_to_filter <- "2025-05-22"
+date_to_filter <- "2025-06-01"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -28,9 +28,9 @@ raw_kobo_data <- raw_kobo %>%
   distinct(uuid, .keep_all = T) %>%
   mutate(across(ends_with("_other"), as.character))
 
-  roster_uuids <- data.frame(
+roster_uuids <- data.frame(
   name = names(raw_kobo)[-1],
-  uuids = c("person_id", "prot_instance_name","shock_instance_name","edu_instance_name", "health_instance_name", "nut_instance_name", "vaccine_instance_name" , "nut_instance_name_2")
+  uuids = c("person_id", "edu_uuid", "health_uuid", "nut_uuid")
 )
 
 # Define a function that processes each element
@@ -56,7 +56,7 @@ if (version_count > 1) {
 }
 
 
-kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA_Tool_final.xlsx"
+kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v1.xlsx"
 questions <- read_excel(kobo_tool_name, sheet = "survey")
 choices <- read_excel(kobo_tool_name, sheet = "choices")
 
@@ -66,7 +66,9 @@ fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_
 
 # # join the fo to the dataset
 data_with_fo <- raw_kobo_data %>%
-  left_join(fo_district_mapping, by = join_by("camp" == "location"))
+  mutate(admin_2_camp = ifelse(is.na(admin2), refugee_camp, admin2),
+         admin_3_camp = ifelse(is.na(admin3), sub_camp, admin3)) %>%
+  left_join(fo_district_mapping, by = join_by("admin1" == "location"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ data_with_fo <- raw_kobo_data %>%
 mindur <- 25
 maxdur <- 120
 
-#set.seed(123)
+set.seed(123)
 data_with_time <- data_with_fo %>%
   mutate(interview_duration = runif(nrow(data_with_fo), 10, 130))
 
@@ -97,7 +99,7 @@ data_in_processing <- data_with_time %>%
 
 deletion_log <- data_in_processing %>%
   filter(length_valid != "Okay") %>%
-  select(uuid, length_valid, camp, enum_id, interview_duration) %>%
+  select(uuid, length_valid, admin1, admin_2_camp, admin_3_camp, enum_id, interview_duration) %>%
   left_join(raw_kobo_data %>% select(uuid, index), by = "uuid")
 
 
@@ -119,7 +121,7 @@ main_data <- data_valid_date
 # ──────────────────────────────────────────────────────────────────────────────
 
 gps<-main_data %>% filter(consent=="yes") %>%
-  select(uuid,enum_id,today, contains("camp"),contains("sub_camp"),contains("point_number"), contains("check_ptno_insamples"), contains("validate_ptno"), contains("pt_sample_lat"), contains("pt_sample_lon"), contains("dist_btn_sample_collected"), contains("reasons_why_far"), contains("geopoint"))
+  select(uuid,enum_id,today, survey_modality, contains("camp"),contains("sub_camp"),contains("point_number"), contains("check_ptno_insamples"), contains("validate_ptno"), contains("pt_sample_lat"), contains("pt_sample_lon"), contains("dist_btn_sample_collected"), contains("reasons_why_far"), contains("geopoint"))
 
 write.xlsx(gps , paste0("03_output/03_gps/gps_checks_", lubridate::today(), ".xlsx"))
 
@@ -147,25 +149,25 @@ checked_main_data <-  main_data %>%
   check_others(
     uuid_column = "uuid",
     columns_to_check = names(main_data%>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains("."))))%>%
+                               dplyr::select(starts_with("other_")) %>%
+                               dplyr::select(-contains(".")))) %>%
   check_value(
     uuid_column = "uuid",
     element_name = "checked_dataset",
     values_to_look = c(-999,-1)
   ) %>%
-  check_outliers(
-    uuid_column = "uuid",
-    element_name = "checked_dataset",
-    kobo_survey = questions,
-    kobo_choices = choices,
-    cols_to_add_cleaning_log = NULL,
-    strongness_factor = 1.5,
-    minimum_unique_value_of_variable = NULL,
-    remove_choice_multiple = TRUE,
-    sm_separator = "/",
-    columns_not_to_check = c(excluded_questions_in_data ,outlier_cols_not_4_checking)
-  ) %>%
+  # check_outliers(
+  #   uuid_column = "uuid",
+  #   element_name = "checked_dataset",
+  #   kobo_survey = questions,
+  #   kobo_choices = choices,
+  #   cols_to_add_cleaning_log = NULL,
+  #   strongness_factor = 3,
+  #   minimum_unique_value_of_variable = 10,
+  #   remove_choice_multiple = TRUE,
+  #   sm_separator = "/",
+  #   columns_not_to_check = c(excluded_questions_in_data ,outlier_cols_not_4_checking)
+  # ) %>%
   check_logical_with_list(uuid_column = "uuid",
                           list_of_check = df_list_logical_checks,
                           check_id_column = "check_id",
@@ -188,7 +190,7 @@ main_cleaning_log <-  checked_main_data %>%
 # ──────────────────────────────────────────────────────────────────────────────
 
 main_to_join <- main_data %>%
-  dplyr::select(camp, sub_camp,today,enum_id,resp_gender, enum_gender,
+  dplyr::select(admin1, admin_2_camp, admin_3_camp, today,enum_id,resp_gender, enum_gender,
                 hoh_gender,fo_in_charge,deviceid,instance_name, index)
 
 
@@ -238,7 +240,7 @@ checked_hh_roster <- roster %>%
 hh_roster_cleaning_log <-  checked_hh_roster %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp", "today","enum_id", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp", "today","enum_id", "fo_in_charge", "index")
   )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -257,7 +259,7 @@ checked_civil_data <- civil %>%
 civil_cleaning_log <-  checked_civil_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -279,7 +281,7 @@ shocks_loop_data <- shocks_loop %>%
 shocks_loop_cleaning_log <-  shocks_loop_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -321,7 +323,7 @@ health_cleaning_log <-  checked_health_data %>%
   add_info_to_cleaning_log(
     dataset = "checked_dataset",
     cleaning_log = "cleaning_log",
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -357,7 +359,7 @@ child_vacination_cleaning_log <-  checked_child_vacination_data %>%
   add_info_to_cleaning_log(
     dataset = "checked_dataset",
     cleaning_log = "cleaning_log",
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -377,7 +379,7 @@ checked_nutrition_data <- nut_ind %>%
 nutrition_cleaning_log <-  checked_nutrition_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -438,7 +440,7 @@ checked_child_feeding_data <-child_feeding %>%
 child_feeding_cleaning_log <-  checked_child_feeding_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -470,7 +472,7 @@ checked_education_data <-  edu_ind %>%
 edu_cleaning_log <-  checked_education_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp","today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
   )
 
 
