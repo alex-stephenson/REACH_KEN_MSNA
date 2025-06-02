@@ -1,6 +1,6 @@
 rm(list = ls())
 
-library(cleaningtools)
+library(cleaningtools, exclude = c('create_xlsx_cleaning_log', 'create_validation_list'))
 library(tidyverse)
 library(readxl)
 library(openxlsx)
@@ -10,6 +10,8 @@ library(healthyr)
 
 date_to_filter <- "2025-06-01"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
+
+source("00_src/00_utils.R")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Load all the data
@@ -22,7 +24,7 @@ raw_kobo <- ImpactFunctions::get_kobo_data(asset_id = asset_id, un = "alex_steph
 #form <- robotoolbox::kobo_form(asset_id)
 raw_kobo_data <- raw_kobo %>%
   pluck("main") %>%
-  select(-uuid) %>%
+  select(-uuid, -`_attachments`) %>%
   dplyr::rename(uuid =`_uuid`,
                 index = `_index`) %>%
   distinct(uuid, .keep_all = T) %>%
@@ -46,6 +48,7 @@ roster_outputs <- purrr::pmap(roster_uuids, process_roster)
 
 names(roster_outputs) <- roster_uuids$name
 
+roster_outputs[['main']] <- raw_kobo_data
 
 roster_outputs %>%
   write_rds(., "03_output/01_raw_data/all_raw_data.rds")
@@ -62,13 +65,13 @@ choices <- read_excel(kobo_tool_name, sheet = "choices")
 
 # read in the FO/district mapping
 fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_25.xlsx") %>%
-  select(location, fo_in_charge = FO_In_Charge)
+  rename(fo_in_charge = FO_In_Charge)
 
 # # join the fo to the dataset
 data_with_fo <- raw_kobo_data %>%
   mutate(admin_2_camp = ifelse(is.na(admin2), refugee_camp, admin2),
          admin_3_camp = ifelse(is.na(admin3), sub_camp, admin3)) %>%
-  left_join(fo_district_mapping, by = join_by("admin1" == "location"))
+  left_join(fo_district_mapping, by = join_by(camp_or_hc, admin1))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -188,6 +191,8 @@ main_cleaning_log <-  checked_main_data %>%
 # 5. Roster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
 
+
+
 main_to_join <- main_data %>%
   dplyr::select(admin1, admin_2_camp, admin_3_camp, today,enum_id,resp_gender, enum_gender,
                 hoh_gender,fo_in_charge,deviceid,instance_name, index)
@@ -200,6 +205,8 @@ trans_roster <- function(data) {
     dplyr::left_join(main_to_join, by = join_by(index == index))
 }
 
+
+roster_outputs$main <- NULL
 roster_outputs_trans <- map(roster_outputs, trans_roster)
 
 purrr::walk2(roster_outputs_trans, roster_uuids$name, ~assign(.y, .x, envir = .GlobalEnv))
@@ -386,10 +393,10 @@ edu_cleaning_log <-  checked_education_data %>%
 
 final_clog <- bind_rows(
   main_cleaning_log$cleaning_log %>% mutate(clog_type = "main"),
-  hh_roster_cleaning_log$cleaning_log %>% mutate(clog_type = "hh_roster"),
-  health_cleaning_log$cleaning_log %>% mutate(clog_type = "health"),
-  child_feeding_cleaning_log$cleaning_log %>% mutate(clog_type = "child_feeding"),
-  edu_cleaning_log$cleaning_log %>% mutate(clog_type = "education"))
+  hh_roster_cleaning_log$cleaning_log %>% mutate(clog_type = "roster"),
+  health_cleaning_log$cleaning_log %>% mutate(clog_type = "health_ind"),
+  child_feeding_cleaning_log$cleaning_log %>% mutate(clog_type = "nut_ind"),
+  edu_cleaning_log$cleaning_log %>% mutate(clog_type = "edu_ind"))
 
 
 final_clog <- final_clog %>%
@@ -428,7 +435,7 @@ cleaning_log <- map(common_groups, function(g) {
 })
 
 options(openxlsx.na.string = "")
-cleaning_log %>% purrr::map(~ cleaningtools::create_xlsx_cleaning_log(.[],
+cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[],
                                                                       cleaning_log_name = "cleaning_log",
                                                                       change_type_col = "change_type",
                                                                       column_for_color = "check_binding",
@@ -439,6 +446,7 @@ cleaning_log %>% purrr::map(~ cleaningtools::create_xlsx_cleaning_log(.[],
                                                                       body_front = "Calibri",
                                                                       body_front_size = 10,
                                                                       use_dropdown = T,
+                                                                      use_others = T,
                                                                       sm_dropdown_type = "numerical",
                                                                       kobo_survey = questions,
                                                                       kobo_choices = choices,

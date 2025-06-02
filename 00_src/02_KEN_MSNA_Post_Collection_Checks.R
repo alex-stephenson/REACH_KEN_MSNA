@@ -13,7 +13,7 @@ library(ImpactFunctions)
 
 # read in the FO/district mapping
 fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_25.xlsx") %>%
-  select(location, fo_in_charge = FO_In_Charge)
+  rename(fo_in_charge = FO_In_Charge)
 
 ## raw data
 all_raw_data <- read_rds("03_output/01_raw_data/all_raw_data.rds")
@@ -46,15 +46,15 @@ cleaning_logs <- cleaning_logs %>%
 
 ## check if there are any issues with all the clogs before they get split
 
-clog_review <- cleaningtools::review_cleaning_log(
-  raw_dataset = x$raw_data,
-  raw_data_uuid_column = "uuid",
-  cleaning_log = x$cleaning_log,
-  cleaning_log_change_type_column = "change_type",
-  change_response_value = "change_response",
-  cleaning_log_question_column = "question",
-  cleaning_log_uuid_column = "uuid",
-  cleaning_log_new_value_column = "new_value")
+# clog_review <- cleaningtools::review_cleaning_log(
+#   raw_dataset = x$raw_data,
+#   raw_data_uuid_column = "uuid",
+#   cleaning_log = x$cleaning_log,
+#   cleaning_log_change_type_column = "change_type",
+#   change_response_value = "change_response",
+#   cleaning_log_question_column = "question",
+#   cleaning_log_uuid_column = "uuid",
+#   cleaning_log_new_value_column = "new_value")
 
 
 clogs_split <- cleaning_logs %>%
@@ -110,8 +110,7 @@ cleaning_log_summaries <- purrr::map(list_of_df_and_clog, function(x) {
 
   ## remove any dlogs from the raw data
   cleaned_data <- x$raw_data %>%
-    filter(!index %in% deletion_log$index) %>%
-    mutate(across(everything(), as.character))
+    filter(!index %in% deletion_log$index)
 
   ## easy list output
   list(
@@ -139,7 +138,7 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
 
   message("Successfully created clean data, filtering tool...")
 
-  # Identify relevant select_multiple parent questions in the dataset
+  # Identify relevant select_multiple parent questions in the dataset -- this speeds it up massively
   relevant_sm_parents <- my_clean_data %>%
     names() %>%
     keep(~ str_detect(.x, "/")) %>%
@@ -175,7 +174,7 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
     message(paste0("Processed: ", x$cleaning_log$clog_type[1]))
 
     return(list(
-      raw_data = x$pre_raw_data,
+      raw_data = x$pre_raw_data %>% utils::type.convert(as.is = TRUE),
       my_clean_data_final = my_clean_data_parentcol$data_with_fix_concat,
       cleaning_log = my_clean_data_parentcol$cleaning_log,
       deletion_log = deletion_log
@@ -186,7 +185,7 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
     message(paste0("No select multiple questions for ", x$cleaning_log$clog_type[1], " returning existing clog."))
 
     return(list(
-      raw_data = x$raw_data,
+      raw_data = x$pre_raw_data %>% utils::type.convert(as.is = TRUE),
       my_clean_data_final = my_clean_data,
       cleaning_log = x$cleaning_log,
       deletion_log = deletion_log
@@ -272,7 +271,7 @@ similar_survey_output %>%
 
 ## need to add some code in here that joins raw_data to clean_data_logs by roster ID and then adds deletion log to each of them.
 
-cleaning_log_summaries <- purrr::map(clean_data_logs, function(x) {
+clog_issues <- purrr::map(clean_data_logs, function(x) {
 
 
   review_cleaning <- review_cleaning(x$raw_data,
@@ -300,7 +299,24 @@ cleaning_log_summaries <- purrr::map(clean_data_logs, function(x) {
 })
 
 
-writexl::write_xlsx(cleaning_log_summaries, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
+writexl::write_xlsx(clog_issues, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. Output everything
+# ──────────────────────────────────────────────────────────────────────────────
+
+all_cleaning_logs %>%
+  writexl::write_xlsx(., "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
+
+clean_data_logs$main$my_clean_data_final %>%
+  writexl::write_xlsx(., "03_output/05_clean_data/final_clean_main_data.xlsx")
+
+clean_data_logs$main$raw_data %>%
+  writexl::write_xlsx(., "03_output/01_raw_data/raw_data_main")
+
+deletion_log %>%
+  writexl::write_xlsx(., "03_output/02_deletion_log/combined_deletion_log.xlsx")
 
 
 
