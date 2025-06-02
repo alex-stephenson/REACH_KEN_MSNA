@@ -35,13 +35,12 @@ message("successfully loaded clean data")
 
 all_dlogs <- readxl::read_excel("03_output/02_deletion_log/combined_deletion_log.xlsx")
 
-message("----------DATA SUCCESSFULLY LOADED-----------------")
-
 
 ### FO Data
 fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_25.xlsx") %>%
   select(admin1, camp_or_hc, "fo" = FO_In_Charge)
 
+message("----------DATA SUCCESSFULLY LOADED-----------------")
 
 clean_data <- clean_data %>%
   left_join(fo_district_mapping, by = join_by(camp_or_hc, admin1)) %>%
@@ -58,14 +57,14 @@ interview_count <- clean_data %>%
   count(admin1, admin_2_camp, name = "Surveys_Done")
 
 KIIs_Done <- sampling_frame %>%
-  rename(Surveys_Target = total)
+  rename(Surveys_Target = total,
+         admin_2_camp = location_code) %>%
   left_join(interview_count) %>%
-  select(location_code, fo, Surveys_Done, Surveys_Target) %>%
+  select(admin_2_camp, Surveys_Done, Surveys_Target) %>%
   mutate(Complete = ifelse(Surveys_Done >= Surveys_Target, "Yes", "No"))
 
 KIIs_Done %>%
-  writexl::write_xlsx(., "03_output/10_dashboard_output/completion_report.xlsx")
-
+  writexl::write_xlsx(., "02_input/06_dashboard_inputs/completion_report.xlsx")
 
 #--------------------------------------------------------
 # Site level Completion
