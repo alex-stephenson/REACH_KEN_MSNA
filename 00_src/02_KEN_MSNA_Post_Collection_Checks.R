@@ -13,14 +13,14 @@ library(ImpactFunctions)
 
 # read in the FO/district mapping
 fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_25.xlsx") %>%
-  select(admin_2, fo_in_charge = FO_In_Charge)
+  select(location, fo_in_charge = FO_In_Charge)
 
 ## raw data
 all_raw_data <- read_rds("03_output/01_raw_data/all_raw_data.rds")
 
 
 ## tool
-kobo_tool_name <- "04_tool/REACH_2024_MSNA_kobo tool.xlsx"
+kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v1.xlsx"
 kobo_survey <- read_excel(kobo_tool_name, sheet = "survey")
 kobo_choice <- read_excel(kobo_tool_name, sheet = "choices")
 
@@ -29,7 +29,7 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices")
 file_list <- list.files(path = "01_cleaning_logs", recursive = TRUE, full.names = TRUE)
 
 file_list <- file_list %>%
-  keep(~ str_detect(.x, "May_19"))
+  keep(~ str_detect(.x, "Jun_02"))
 
 # Function to read and convert all columns to character
 read_and_clean <- function(file, sheet) {
@@ -78,13 +78,16 @@ list_of_df_and_clog <- map(common_rosters, function(g) {
   )
 })
 
+names(list_of_df_and_clog) <- common_rosters
+
+
 # Read in all the dlogs
 all_dlogs <- readxl::read_excel(r"(03_output/02_deletion_log/deletion_log.xlsx)", col_types = "text")
 manual_dlog <- readxl::read_excel("03_output/02_deletion_log/MSNA_2025_Manual_Deletion_Log.xlsx", col_types = "text")
 cleaning_log_deletions <- cleaning_logs %>%
   filter(change_type == "remove_survey") %>%
   mutate(interview_duration = "") %>%
-  select(uuid, settlement_idp, enum_id, enum_gender,interview_duration, index, comment = issue) %>%
+  select(uuid, admin1, admin_2_camp, admin_3_camp, enum_id,interview_duration, index, comment = issue) %>%
   mutate(across(everything(), as.character))
 
 deletion_log <- bind_rows(all_dlogs, cleaning_log_deletions) %>%
@@ -190,21 +193,15 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
     ))
 
   }
-
-
 })
 
 ### combine the clog together
-
 
 all_cleaning_logs <- purrr::map(clean_data_logs, function(x){
   cleaning_log <- x$cleaning_log
 })
 
 all_cleaning_logs <- bind_rows(all_cleaning_logs)
-
-## --> look into this "fsl_source_food/NA"
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Review the soft duplicates
@@ -295,26 +292,15 @@ cleaning_log_summaries <- purrr::map(clean_data_logs, function(x) {
                                      check_for_deletion_log = T
   )
 
-  return(list (
+  review_cleaning <- review_cleaning %>%
+    left_join(cleaning_logs %>% select(uuid, file_path) %>% distinct(), by = "uuid")
+
     review_cleaning = review_cleaning
-  ))
+
 })
 
 
-#### action everything #####
-
-
-first_review <- review_cleaning %>%
-  left_join(all_cleaning_logs %>% select(uuid, file_path) %>% distinct())
-
-
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 5. Output all data
-# ──────────────────────────────────────────────────────────────────────────────
-
-write.xlsx(first_review,"03_output/11_clog_review/clog_review.xlsx")
+writexl::write_xlsx(cleaning_log_summaries, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
 
 
 

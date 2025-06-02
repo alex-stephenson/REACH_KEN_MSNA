@@ -122,7 +122,6 @@ main_data <- data_valid_date
 
 gps<-main_data %>% filter(consent=="yes") %>%
   select(uuid,enum_id,today, survey_modality, contains("camp"),contains("sub_camp"),contains("point_number"), contains("check_ptno_insamples"), contains("validate_ptno"), contains("pt_sample_lat"), contains("pt_sample_lon"), contains("dist_btn_sample_collected"), contains("reasons_why_far"), contains("geopoint"))
-
 write.xlsx(gps , paste0("03_output/03_gps/gps_checks_", lubridate::today(), ".xlsx"))
 
 
@@ -180,7 +179,7 @@ checked_main_data <-  main_data %>%
 main_cleaning_log <-  checked_main_data %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
-    information_to_add = c("camp","sub_camp", "today","enum_id", "fo_in_charge", "index")
+    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp", "today","enum_id", "fo_in_charge", "index")
   )
 
 
@@ -243,50 +242,9 @@ hh_roster_cleaning_log <-  checked_hh_roster %>%
     information_to_add = c("admin1", "admin_2_camp", "admin_3_camp", "today","enum_id", "fo_in_charge", "index")
   )
 
-# ──────────────────────────────────────────────────────────────────────────────
-#  5.2 Civil Roster data cleaning
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-checked_civil_data <- civil %>%
-    check_others(
-    uuid_column = "uuid",
-    columns_to_check = names(civil %>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains(".")))
-  )
-
-civil_cleaning_log <-  checked_civil_data %>%
-  create_combined_log() %>%
-  add_info_to_cleaning_log(
-    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
-  )
-
-
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  5.3 Shocks Roster data cleaning
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-
-shocks_loop_data <- shocks_loop %>%
-    check_others(
-    uuid_column = "uuid",
-    columns_to_check = names(shocks_loop%>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains(".")))
-  )
-
-shocks_loop_cleaning_log <-  shocks_loop_data %>%
-  create_combined_log() %>%
-  add_info_to_cleaning_log(
-    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
-  )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-#  5.4 Health Roster data cleaning
+#  5.2 Health Roster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
 
 df_list_logical_checks_health <- read_csv("02_input/01_logical_checks/check_list_health.csv")
@@ -294,12 +252,12 @@ df_list_logical_checks_health <- read_csv("02_input/01_logical_checks/check_list
 checked_health_data <- health_ind %>%
     check_duplicate(
     uuid_column = "uuid",
-    columns_to_check = c("uuid","health_instance_name")
+    columns_to_check = c("uuid","health_parent_instance")
   ) %>%
   check_others(
     uuid_column = "uuid",
     columns_to_check = names(health_ind%>%
-                               dplyr::select(ends_with("_other")) %>%
+                               dplyr::select(starts_with("other_")) %>%
                                dplyr::select(-contains(".")))
 
 
@@ -327,117 +285,62 @@ health_cleaning_log <-  checked_health_data %>%
   )
 
 
-
 # ──────────────────────────────────────────────────────────────────────────────
-#  5.5 Vaccine Roster data cleaning
-# ──────────────────────────────────────────────────────────────────────────────
-
-df_list_logical_checks_vaccine <- read_csv("02_input/01_logical_checks/check_list_vaccine.csv")
-
-checked_child_vacination_data <- vaccine %>%
-  check_others(
-    uuid_column = "uuid",
-    columns_to_check = names(vaccine%>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains(".")))
-  ) %>%
-  check_value(
-    uuid_column = "uuid",
-    element_name = "checked_dataset",
-    values_to_look = c( -999,-1)
-  ) %>%
-  check_logical_with_list(uuid_column = "uuid",
-                          list_of_check = df_list_logical_checks_vaccine,
-                          check_id_column = "check_id",
-                          check_to_perform_column = "check_to_perform",
-                          columns_to_clean_column = "columns_to_clean",
-                          description = "description",
-                          bind_checks = TRUE)
-
-child_vacination_cleaning_log <-  checked_child_vacination_data %>%
-  create_combined_log() %>%
-  add_info_to_cleaning_log(
-    dataset = "checked_dataset",
-    cleaning_log = "cleaning_log",
-    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
-  )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-#  5.6 Nutrition Roster data cleaning
+#  5.2 Child nutrition feeding Roster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
 
-checked_nutrition_data <- nut_ind %>%
-  check_others(
-    uuid_column = "uuid",
-    columns_to_check = names(nut_ind %>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains(".")))
-
-  )
-
-nutrition_cleaning_log <-  checked_nutrition_data %>%
-  create_combined_log() %>%
-  add_info_to_cleaning_log(
-    information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
-  )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-#  5.7 Child feeding Roster data cleaning
-# ──────────────────────────────────────────────────────────────────────────────
-
-child_feeding_formatted <- impactR4PHU::add_iycf(.dataset = child_feeding,
+nut_ind_formatted <- impactR4PHU::add_iycf(.dataset = nut_ind,
                                                  yes_value = "yes",
                                                  no_value = "no",
                                                  dnk_value = "dnk",
                                                  pna_value = "pnta",
-                                                 age_months = "child_age_months",
-                                                 iycf_1 = "breastfed_ever", # ever breastfed (y/n)
-                                                 iycf_4 = "breastfed_yesterday", # breastfed yesterday during the day or night (y/n)
-                                                 iycf_6a = "water", # plain water
-                                                 iycf_6b = "infant_formula_yesterday_yn", # infant formula (y/n)
-                                                 iycf_6c = "milk_yn", # milk from animals, fresh tinned powder (y/n)
-                                                 iycf_6d = "sour_milk_yn", # yoghurt drinks (y/n)
-                                                 iycf_6e = "choco_drink", # chocolate flavoured drinks, including from syrup / powders (y/n)
-                                                 iycf_6f = "juice", # Fruit juice or fruit-flavoured drinks including those made from syrups or powders? (y/n)
-                                                 iycf_6g = "soda", # sodas, malt drinks, sports and energy drinks (y/n)
-                                                 iycf_6h = "tea", # tea, coffee, herbal drinks (y/n)
-                                                 iycf_6i = "clear_broth", # clear broth / soup (y/n)
-                                                 iycf_6j = "water_based", # other liquids (y/n)
-                                                 iycf_7a = "yoghurt_yn", # yoghurt (NOT yoghurt drinks) (number)
-                                                 iycf_7b = "thin_porridge",
-                                                 iycf_7c = "vegetables", # vitamin a rich vegetables (pumpkin, carrots, sweet red peppers, squash or yellow/orange sweet potatoes) (y/n)
-                                                 iycf_7d = "root_vegetables", # white starches (plaintains, white potatoes, white yams, manioc, cassava) (y/n)
-                                                 iycf_7e = "leafy_vegetables", # dark green leafy vegetables (y/n)
-                                                 iycf_7f = "vegetables_other", # other vegetables (y/n)
-                                                 iycf_7g = "tropical_fruits", # vitamin a rich fruits (ripe mangoes, ripe papayas) (y/n)
-                                                 iycf_7h = "fruits_other", # other fruits (y/n)
-                                                 iycf_7i = "organ_meats", # organ meats (liver ,kidney, heart) (y/n)
+                                                 age_months = "nut_ind_under5_age_months",
+                                                 iycf_1 = "child_breastfed", # ever breastfed (y/n)
+                                                 iycf_2 = "child_first_breastfeeding", # how long the child started breastfeeding after birth
+                                                 iycf_4 = "breastfeeding", # breastfed yesterday during the day or night (y/n)
+                                                 iycf_5 = "infant_bottlefed", #indicates if the child drink anything from a bottle yesterday
+                                                 iycf_6a = "drink_water", # plain water
+                                                 iycf_6b = "drink_formula", # infant formula (y/n)
+                                                 iycf_6c = "drink_milk", # milk from animals, fresh tinned powder (y/n)
+                                                 iycf_6d = "drink_yoghurt", # yoghurt drinks (y/n)
+                                                 iycf_6e = "chocolate_drink", # chocolate flavoured drinks, including from syrup / powders (y/n)
+                                                 iycf_6f = "juice_drink", # Fruit juice or fruit-flavoured drinks including those made from syrups or powders? (y/n)
+                                                 iycf_6g = "soda_drink", # sodas, malt drinks, sports and energy drinks (y/n)
+                                                 iycf_6h = "tea_drink", # tea, coffee, herbal drinks (y/n)
+                                                 iycf_6i = "broth_drink", # clear broth / soup (y/n)
+                                                 iycf_6j = "other_drink", # other liquids (y/n)
+                                                 iycf_7a = "yoghurt_food", # yoghurt (NOT yoghurt drinks) (number)
+                                                 iycf_7b = "porridge_food",
+                                                 iycf_7c = "pumpkin_food", # vitamin a rich vegetables (pumpkin, carrots, sweet red peppers, squash or yellow/orange sweet potatoes) (y/n)
+                                                 iycf_7d = "plantain_food", # white starches (plaintains, white potatoes, white yams, manioc, cassava) (y/n)
+                                                 iycf_7e = "vegetables_food", # dark green leafy vegetables (y/n)
+                                                 iycf_7f = "other_vegetables", # other vegetables (y/n)
+                                                 iycf_7g = "fruits", # vitamin a rich fruits (ripe mangoes, ripe papayas) (y/n)
+                                                 iycf_7h = "other_fruits", # other fruits (y/n)
+                                                 iycf_7i = "liver", # organ meats (liver ,kidney, heart) (y/n)
                                                  iycf_7j = "canned_meat", # processed meats (sausages, hot dogs, ham, bacon, salami, canned meat) (y/n)
-                                                 iycf_7k = "meat", # any other meats (beef, chicken, pork, goat, chicken, duck) (y/n)
-                                                 iycf_7l = "egg", # eggs (y/n)
-                                                 iycf_7m = "seafood", # fish (fresh or dried fish or shellfish) (y/n)
-                                                 iycf_7n = "legumes", # legumes (beans, peas, lentils, seeds, chickpeas) (y/n)
+                                                 iycf_7k = "other_meat", # any other meats (beef, chicken, pork, goat, chicken, duck) (y/n)
+                                                 iycf_7l = "eggs", # eggs (y/n)
+                                                 iycf_7m = "fish", # fish (fresh or dried fish or shellfish) (y/n)
+                                                 iycf_7n = "cereals", # legumes (beans, peas, lentils, seeds, chickpeas) (y/n)
                                                  iycf_7o = "cheese", # cheeses (hard or soft cheeses) (y/n)
-                                                 iycf_7p = "sweets", # sweets (chocolates, candies, pastries, cakes) (y.n)
+                                                 iycf_7p = "sweet_food", # sweets (chocolates, candies, pastries, cakes) (y.n)
                                                  iycf_7q = "chips", # fried or empty carbs (chips, crisps, french fries, fried dough, instant noodles) (y/n)
-                                                 iycf_7r = "foods_other",
-                                                 iycf_8 = "child_solid_yesterday", # times child ate solid/semi-solid foods (number),
-                                                 uuid = "uuid")
+                                                 iycf_7r = "other_solid",
+                                                 iycf_8 = "times_solid", # times child ate solid/semi-solid foods (number),
+                                                 uuid = "uuid") %>%
+  mutate(across(starts_with("other_"), as.numeric))
 
 
 
-
-
-checked_child_feeding_data <-child_feeding %>%
+checked_nut_ind_formatted <- nut_ind_formatted %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(child_feeding%>%
-                               dplyr::select(ends_with("_other")) %>%
+    columns_to_check = names(nut_ind_formatted%>%
+                               dplyr::select(contains("other_nut_ind_under5")) %>%
                                dplyr::select(-contains("."))))
 
-child_feeding_cleaning_log <-  checked_child_feeding_data %>%
+child_feeding_cleaning_log <-  checked_nut_ind_formatted %>%
   create_combined_log() %>%
   add_info_to_cleaning_log(
     information_to_add = c("admin1", "admin_2_camp", "admin_3_camp","today","enum_id", "fo_in_charge", "index")
@@ -445,7 +348,7 @@ child_feeding_cleaning_log <-  checked_child_feeding_data %>%
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  5.8 Education feeding Roster data cleaning
+#  5.4 Education feeding Roster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
 
 df_list_logical_checks_edu <- read_csv("02_input/01_logical_checks/check_list_education.csv")
@@ -453,7 +356,7 @@ df_list_logical_checks_edu <- read_csv("02_input/01_logical_checks/check_list_ed
 checked_education_data <-  edu_ind %>%
     check_duplicate(
     uuid_column = "uuid",
-    columns_to_check = c("uuid","edu_instance_name")
+    columns_to_check = c("uuid","edu_parent_instance")
   )  %>%
   check_others(
     uuid_column = "uuid",
@@ -484,10 +387,7 @@ edu_cleaning_log <-  checked_education_data %>%
 final_clog <- bind_rows(
   main_cleaning_log$cleaning_log %>% mutate(clog_type = "main"),
   hh_roster_cleaning_log$cleaning_log %>% mutate(clog_type = "hh_roster"),
-  civil_cleaning_log$cleaning_log %>% mutate(clog_type = "civil"),
-  shocks_loop_cleaning_log$cleaning_log %>% mutate(clog_type = "shocks"),
   health_cleaning_log$cleaning_log %>% mutate(clog_type = "health"),
-  child_vacination_cleaning_log$cleaning_log %>% mutate(clog_type = "child_vacc"),
   child_feeding_cleaning_log$cleaning_log %>% mutate(clog_type = "child_feeding"),
   edu_cleaning_log$cleaning_log %>% mutate(clog_type = "education"))
 
