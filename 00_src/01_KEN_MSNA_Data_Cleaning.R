@@ -1,3 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────────
+# This code uses the Somalia standardised approach for producing clogs, applying
+# them and making raw, clean, clogs and dlogs (deletion logs) on a daily basis.
+#
+# Within the MSNA framework it is more complicated because we have to allow for
+# multiple repeat sections within the data. This code extensively uses iterative
+# code to achieve this, primarily from the {purrr} library.
+#
+# The code basically follows these steps
+# ➡️ Read in  raw data via the Kobo API, see package {ImpactFunctions} from
+# https://github.com/alex-stephenson/ImpactFunctions. The output is dm object,
+# where each element in the object is either the main data or a part of the repeat.
+# ➡️ The main df is filtered using the metadata duration, also calculated from
+# {ImpactFunctions}, creating a deletion log in the process
+# ➡️ Produces clogs for each element in the dm object, doing a standardised set of
+# transformations in the process.
+# Combining all the sets of clogs, and outputting one clog for every repeat, split
+# by field officer.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+
 rm(list = ls())
 
 library(cleaningtools, exclude = c('create_xlsx_cleaning_log', 'create_validation_list'))
@@ -6,9 +27,10 @@ library(readxl)
 library(openxlsx)
 library(ImpactFunctions)
 library(robotoolbox)
-library(healthyr)
+library(impactR4PHU)
 
-date_to_filter <- "2025-06-01"
+
+#date_to_filter <- "2025-06-01"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 source("00_src/00_utils.R")
@@ -113,8 +135,8 @@ deletion_log %>%
 
 ## filter only valid surveys and for the specific date
 data_valid_date <- data_in_processing %>%
-  filter(length_valid == "Okay") %>%
-  filter(today == date_to_filter)
+  filter(length_valid == "Okay") #%>%
+ # filter(today == date_to_filter)
 
 main_data <- data_valid_date
 
@@ -259,15 +281,12 @@ df_list_logical_checks_health <- read_csv("02_input/01_logical_checks/check_list
 checked_health_data <- health_ind %>%
     check_duplicate(
     uuid_column = "uuid",
-    columns_to_check = c("uuid","health_parent_instance")
   ) %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(health_ind%>%
+    columns_to_check = names(health_ind %>%
                                dplyr::select(starts_with("other_")) %>%
                                dplyr::select(-contains(".")))
-
-
   ) %>%
   # Check for "I don't know" responses in numerical questions
   check_value(
@@ -307,9 +326,9 @@ nut_ind_formatted <- impactR4PHU::add_iycf(.dataset = nut_ind,
                                                  iycf_4 = "breastfeeding", # breastfed yesterday during the day or night (y/n)
                                                  iycf_5 = "infant_bottlefed", #indicates if the child drink anything from a bottle yesterday
                                                  iycf_6a = "drink_water", # plain water
-                                                 iycf_6b = "drink_formula", # infant formula (y/n)
-                                                 iycf_6c = "drink_milk", # milk from animals, fresh tinned powder (y/n)
-                                                 iycf_6d = "drink_yoghurt", # yoghurt drinks (y/n)
+                                                 iycf_6b = "drink_formula_yn", # infant formula (y/n)
+                                                 iycf_6c = "drink_milk_yn", # milk from animals, fresh tinned powder (y/n)
+                                                 iycf_6d = "drink_yoghurt_yn", # yoghurt drinks (y/n)
                                                  iycf_6e = "chocolate_drink", # chocolate flavoured drinks, including from syrup / powders (y/n)
                                                  iycf_6f = "juice_drink", # Fruit juice or fruit-flavoured drinks including those made from syrups or powders? (y/n)
                                                  iycf_6g = "soda_drink", # sodas, malt drinks, sports and energy drinks (y/n)
@@ -336,7 +355,44 @@ nut_ind_formatted <- impactR4PHU::add_iycf(.dataset = nut_ind,
                                                  iycf_7r = "other_solid",
                                                  iycf_8 = "times_solid", # times child ate solid/semi-solid foods (number),
                                                  uuid = "uuid") %>%
-  mutate(across(starts_with("other_"), as.numeric))
+  mutate(across(starts_with("other_"), as.numeric)) %>%
+  impactR4PHU::check_iycf_flags(.dataset = .,
+                              age_months = "nut_ind_under5_age_months",
+                              iycf_4 = "breastfeeding", # breastfed yesterday during the day or night (y/n)
+                              iycf_6a = "drink_water", # plain water
+                              iycf_6b = "drink_formula_yn", # infant formula (y/n)
+                              iycf_6c = "drink_milk_yn", # milk from animals, fresh tinned powder (y/n)
+                              iycf_6d = "drink_yoghurt_yn", # yoghurt drinks (y/n)
+                              iycf_6e = "chocolate_drink", # chocolate flavoured drinks, including from syrup / powders (y/n)
+                              iycf_6f = "juice_drink", # Fruit juice or fruit-flavoured drinks including those made from syrups or powders? (y/n)
+                              iycf_6g = "soda_drink", # sodas, malt drinks, sports and energy drinks (y/n)
+                              iycf_6h = "tea_drink", # tea, coffee, herbal drinks (y/n)
+                              iycf_6i = "broth_drink", # clear broth / soup (y/n)
+                              iycf_6j = "other_drink", # other liquids (y/n)
+                              iycf_7a = "yoghurt_food", # yoghurt (NOT yoghurt drinks) (number)
+                              iycf_7b = "porridge_food",
+                              iycf_7c = "pumpkin_food", # vitamin a rich vegetables (pumpkin, carrots, sweet red peppers, squash or yellow/orange sweet potatoes) (y/n)
+                              iycf_7d = "plantain_food", # white starches (plaintains, white potatoes, white yams, manioc, cassava) (y/n)
+                              iycf_7e = "vegetables_food", # dark green leafy vegetables (y/n)
+                              iycf_7f = "other_vegetables", # other vegetables (y/n)
+                              iycf_7g = "fruits", # vitamin a rich fruits (ripe mangoes, ripe papayas) (y/n)
+                              iycf_7h = "other_fruits", # other fruits (y/n)
+                              iycf_7i = "liver", # organ meats (liver ,kidney, heart) (y/n)
+                              iycf_7j = "canned_meat", # processed meats (sausages, hot dogs, ham, bacon, salami, canned meat) (y/n)
+                              iycf_7k = "other_meat", # any other meats (beef, chicken, pork, goat, chicken, duck) (y/n)
+                              iycf_7l = "eggs", # eggs (y/n)
+                              iycf_7m = "fish", # fish (fresh or dried fish or shellfish) (y/n)
+                              iycf_7n = "cereals", # legumes (beans, peas, lentils, seeds, chickpeas) (y/n)
+                              iycf_7o = "cheese", # cheeses (hard or soft cheeses) (y/n)
+                              iycf_7p = "sweet_food", # sweets (chocolates, candies, pastries, cakes) (y.n)
+                              iycf_7q = "chips", # fried or empty carbs (chips, crisps, french fries, fried dough, instant noodles) (y/n)
+                              iycf_7r = "other_solid",
+                              iycf_8 = "times_solid",
+                              iycf_6b_num = "drink_formula",
+                              iycf_6c_num = "drink_milk",
+                              iycf_6d_num = "drink_yoghurt")
+
+
 
 
 
@@ -345,7 +401,15 @@ checked_nut_ind_formatted <- nut_ind_formatted %>%
     uuid_column = "uuid",
     columns_to_check = names(nut_ind_formatted%>%
                                dplyr::select(contains("other_nut_ind_under5")) %>%
-                               dplyr::select(-contains("."))))
+                               dplyr::select(-contains(".")))) %>%
+  check_duplicate(
+    uuid_column = "uuid"
+  ) %>%
+  check_value(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    values_to_look = c(-999,-1)
+  )
 
 child_feeding_cleaning_log <-  checked_nut_ind_formatted %>%
   create_combined_log() %>%
@@ -362,8 +426,7 @@ df_list_logical_checks_edu <- read_csv("02_input/01_logical_checks/check_list_ed
 
 checked_education_data <-  edu_ind %>%
     check_duplicate(
-    uuid_column = "uuid",
-    columns_to_check = c("uuid","edu_parent_instance")
+    uuid_column = "uuid"
   )  %>%
   check_others(
     uuid_column = "uuid",
@@ -377,7 +440,12 @@ checked_education_data <-  edu_ind %>%
                           check_to_perform_column = "check_to_perform",
                           columns_to_clean_column = "columns_to_clean",
                           description = "description",
-                          bind_checks = TRUE)
+                          bind_checks = TRUE) %>%
+  check_value(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    values_to_look = c(-999,-1)
+  )
 
 edu_cleaning_log <-  checked_education_data %>%
   create_combined_log() %>%
