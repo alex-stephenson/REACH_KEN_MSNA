@@ -21,7 +21,7 @@
 
 rm(list = ls())
 
-library(cleaningtools, exclude = c('create_xlsx_cleaning_log', 'create_validation_list'))
+library(cleaningtools, exclude = c('create_xlsx_cleaning_log', 'create_validation_list')) ## we use an updated local version which has drop down for others. See utils
 library(tidyverse)
 library(readxl)
 library(openxlsx)
@@ -30,7 +30,7 @@ library(robotoolbox)
 library(impactR4PHU)
 
 
-#date_to_filter <- "2025-06-01"
+#date_to_filter <- "2025-06-15"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 source("00_src/00_utils.R")
@@ -38,6 +38,22 @@ source("00_src/00_utils.R")
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Load all the data
 # ──────────────────────────────────────────────────────────────────────────────
+
+geo_ref_data <- readxl::read_excel("02_input/07_geo_reference_data/ken_geo_ref_data.xlsx", sheet = "ward")
+
+geo_admin1 <- geo_ref_data %>%
+  distinct(admin_1_pcode, admin_1_name)
+geo_admin2 <- geo_ref_data %>%
+  distinct(admin_2_pcode, admin_2_name)
+geo_admin3 <- geo_ref_data %>%
+  distinct(admin_3_pcode, admin_3_name)
+
+
+
+kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v1.xlsx"
+questions <- read_excel(kobo_tool_name, sheet = "survey")
+choices <- read_excel(kobo_tool_name, sheet = "choices")
+
 
 asset_id <- "a4kprTX3YyfQXvnko6KTRS"
 
@@ -50,23 +66,45 @@ raw_kobo_data <- raw_kobo %>%
   dplyr::rename(uuid =`_uuid`,
                 index = `_index`) %>%
   distinct(uuid, .keep_all = T) %>%
-  mutate(across(ends_with("_other"), as.character))
+  mutate(across(starts_with("_other"), as.character)) %>%
+  ### this code is quite ugly but basically just adds the admin names instead of pcodes, and also combines the admin and refugee site into one
+  left_join(geo_admin1, by = join_by("admin1" == "admin_1_pcode")) %>%
+  mutate(admin_1_camp = admin_1_name) %>%
+  left_join(geo_admin2, by = join_by("admin2" == "admin_2_pcode")) %>%
+  mutate(admin_2_camp = ifelse(is.na(admin2), refugee_camp, admin_2_name)) %>%
+  left_join(geo_admin3, by = join_by("admin3" == "admin_3_pcode")) %>%
+  mutate(admin_3_camp = ifelse(is.na(admin3), sub_camp, admin_3_name)) %>%
+  relocate(admin_1_camp, .after = admin1) %>%
+  relocate(admin_2_camp, .after = admin2) %>%
+  relocate(admin_3_camp, .after = admin3)
 
-roster_uuids <- data.frame(
-  name = names(raw_kobo)[-1],
-  uuids = c("person_id", "edu_uuid", "health_uuid", "nut_uuid")
+
+#### here we will do some transformation of the repeat sections
+source("00_src/00_coerce_columns.R")
+
+roster_uuids <- tibble(
+  name         = names(raw_kobo)[-1],
+  uuids        = c("person_id","edu_uuid","health_uuid","nut_uuid"),
+  repeat_table = names(raw_kobo)[-1]
 )
 
 # Define a function that processes each element
-process_roster <- function(name, uuids) {
-  raw_kobo[[name]] %>%
-    rename(index = `_parent_index`,
-           roster_index = `_index`) %>%
-    mutate(uuid = .data[[uuids]]) %>%  # .data pronoun handles dynamic column name
-    distinct(uuid, .keep_all = TRUE)
+process_roster <- function(name, uuids, repeat_table) {
+  child_names <- repeat_fields[[ repeat_table ]]
+  raw_kobo[[ name ]] %>%
+    rename(
+      index        = `_parent_index`,
+      roster_index = `_index`
+    ) %>%
+    mutate(uuid = .data[[ uuids ]]) %>%
+    distinct(uuid, .keep_all = TRUE) %>%
+    filter_by_survey(child_names)
 }
 
-roster_outputs <- purrr::pmap(roster_uuids, process_roster)
+roster_outputs <- pmap(
+  roster_uuids,
+  process_roster
+)
 
 names(roster_outputs) <- roster_uuids$name
 
@@ -81,21 +119,16 @@ if (version_count > 1) {
 }
 
 
-kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v1.xlsx"
-questions <- read_excel(kobo_tool_name, sheet = "survey")
-choices <- read_excel(kobo_tool_name, sheet = "choices")
-
 # read in the FO/district mapping
 fo_district_mapping <- read_excel("02_input/04_fo_input/fo_base_assignment_MSNA_25.xlsx") %>%
   rename(fo_in_charge = FO_In_Charge)
 
 # # join the fo to the dataset
 data_with_fo <- raw_kobo_data %>%
-  mutate(admin_2_camp = ifelse(is.na(admin2), refugee_camp, admin2),
-         admin_3_camp = ifelse(is.na(admin3), sub_camp, admin3)) %>%
-  left_join(fo_district_mapping, by = join_by(camp_or_hc, admin1))
+  left_join(fo_district_mapping %>% select(-admin_1_name), by = join_by("admin1" == "admin_1_pcode"))
 
-
+data_with_fo <- data_with_fo   %>%
+  filter(!is.na(fo_in_charge))
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Filter for time and export deleted surveys
 # ──────────────────────────────────────────────────────────────────────────────
@@ -103,12 +136,12 @@ data_with_fo <- raw_kobo_data %>%
 mindur <- 25
 maxdur <- 120
 
-set.seed(123)
+set.seed(124)
 data_with_time <- data_with_fo %>%
   mutate(interview_duration = runif(nrow(data_with_fo), 10, 130))
 
 
-#kobo_data_metadata <- get_kobo_metadata(dataset = data_with_fo, un = "alex_stephenson", asset_id = "antAdT3siLrnjTdfcdYcFY", remove_geo = T)
+#kobo_data_metadata <- get_kobo_metadata(dataset = data_with_fo, un = "alex_stephenson", asset_id = asset_id, remove_geo = T)
 #data_with_time <- kobo_data_metadata$df_and_duration
 #raw_metadata_length <- kobo_data_metadata$audit_files_length
 #write_rds(raw_metadata_length, "03_output/01_raw_data/raw_metadata.rds")
@@ -154,6 +187,12 @@ write.xlsx(gps , paste0("03_output/03_gps/gps_checks_", lubridate::today(), ".xl
 # 4. Apply the checks to the main data
 # ──────────────────────────────────────────────────────────────────────────────
 
+## calculate other questions
+others_to_check <- questions %>%
+  filter(type == "text",
+         str_detect(name, "other")) %>%
+  pull(name)
+
 
 df_list_logical_checks <- read_csv("02_input/01_logical_checks/check_list.csv")
 
@@ -172,9 +211,7 @@ outlier_cols_not_4_checking <- main_data %>%
 checked_main_data <-  main_data %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(main_data%>%
-                               dplyr::select(starts_with("other_")) %>%
-                               dplyr::select(-contains(".")))) %>%
+    columns_to_check = names(main_data %>% select(contains(others_to_check)))) %>%
   check_value(
     uuid_column = "uuid",
     element_name = "checked_dataset",
@@ -234,7 +271,7 @@ roster_outputs_trans <- map(roster_outputs, trans_roster)
 purrr::walk2(roster_outputs_trans, roster_uuids$name, ~assign(.y, .x, envir = .GlobalEnv))
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  5.1 HH Roaster data cleaning
+#  5.1 HH Roster data cleaning
 # ──────────────────────────────────────────────────────────────────────────────
 
 excluded_questions_in_data <- intersect(colnames(roster), excluded_questions)
@@ -284,9 +321,7 @@ checked_health_data <- health_ind %>%
   ) %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(health_ind %>%
-                               dplyr::select(starts_with("other_")) %>%
-                               dplyr::select(-contains(".")))
+    columns_to_check = names(health_ind %>% select(contains(others_to_check)))
   ) %>%
   # Check for "I don't know" responses in numerical questions
   check_value(
@@ -399,9 +434,7 @@ nut_ind_formatted <- impactR4PHU::add_iycf(.dataset = nut_ind,
 checked_nut_ind_formatted <- nut_ind_formatted %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(nut_ind_formatted%>%
-                               dplyr::select(contains("other_nut_ind_under5")) %>%
-                               dplyr::select(-contains(".")))) %>%
+    columns_to_check = names(nut_ind_formatted %>% select(contains(others_to_check)))) %>%
   check_duplicate(
     uuid_column = "uuid"
   ) %>%
@@ -430,9 +463,7 @@ checked_education_data <-  edu_ind %>%
   )  %>%
   check_others(
     uuid_column = "uuid",
-    columns_to_check = names(edu_ind %>%
-                               dplyr::select(ends_with("_other")) %>%
-                               dplyr::select(-contains(".")))
+    columns_to_check = names(edu_ind %>% select(contains(others_to_check)))
   ) %>%
   check_logical_with_list(uuid_column = "uuid",
                           list_of_check = df_list_logical_checks_edu,
