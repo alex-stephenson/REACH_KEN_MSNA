@@ -15,7 +15,7 @@
 # and then apply the recreate parent column if there is any select multiple
 # questions.
 # ➡️ The created clogs are also reviewed on a daily basis. Again this happens
-# iteratively.
+# itertively.
 # ➡️ If there are no clogs identified, most of these steps are skipped.
 # ➡️ Finally, all of the outputs outputted, and then can be fed into the field
 # monitoring dashboard.
@@ -54,7 +54,7 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices")
 file_list <- list.files(path = "01_cleaning_logs", recursive = TRUE, full.names = TRUE)
 
 file_list <- file_list %>%
-  keep(~ str_detect(.x, "Jun_02"))
+  keep(~ str_detect(.x, "complete"))
 
 #file_list <- file_list %>%
 #  keep(~ str_detect(.x, "Complete"))
