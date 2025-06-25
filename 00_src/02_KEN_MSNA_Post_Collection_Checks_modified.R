@@ -309,61 +309,134 @@ if(! is_empty(file_list)) {
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-if(! is_empty(file_list)) {
+# if(! is_empty(file_list)) {
+#
+#   clog_issues <- purrr::map(clean_data_logs, function(x) {
+#
+#
+#     review_cleaning <- review_cleaning(x$raw_data,
+#                                        raw_dataset_uuid_column = "uuid",
+#                                        x$my_clean_data_final,
+#                                        clean_dataset_uuid_column = "uuid",
+#                                        cleaning_log = x$cleaning_log,
+#                                        cleaning_log_uuid_column = "uuid",
+#                                        cleaning_log_change_type_column = "change_type",
+#                                        cleaning_log_question_column = "question",
+#                                        cleaning_log_new_value_column = "new_value",
+#                                        cleaning_log_old_value_column = "old_value",
+#                                        cleaning_log_added_survey_value = "added_survey",
+#                                        cleaning_log_no_change_value = c("no_action", "no_change"),
+#                                        deletion_log = x$deletion_log,
+#                                        deletion_log_uuid_column = "uuid",
+#                                        check_for_deletion_log = T
+#     )
+#
+#     review_cleaning <- review_cleaning %>%
+#       left_join(cleaning_logs %>% select(uuid, file_path) %>% distinct(), by = "uuid")
+#
+#     review_cleaning = review_cleaning
+#
+#   })
+#
+#
+#   writexl::write_xlsx(clog_issues, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
+#
+#
+#   # ──────────────────────────────────────────────────────────────────────────────
+#   # 4. Output everything
+#   # ──────────────────────────────────────────────────────────────────────────────
+#
+#   all_cleaning_logs %>%
+#     writexl::write_xlsx(., "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
+#
+#   clean_data_logs$main$my_clean_data_final %>%
+#     writexl::write_xlsx(., "03_output/05_clean_data/final_clean_main_data.xlsx")
+#
+#
+#
+#   clean_data_logs$main$raw_data %>%
+#     writexl::write_xlsx(., "03_output/01_raw_data/raw_data_main.xlsx")
+#
+#
+#
+#   deletion_log %>%
+#     writexl::write_xlsx(., "03_output/02_deletion_log/combined_deletion_log.xlsx")
+#
+# }
 
-  clog_issues <- purrr::map(clean_data_logs, function(x) {
+# OUTPUT FINAL CLEANING DATA ---------------------------------------------------
+if (!is_empty(file_list)) {
 
+  # Export each clean dataset in clean_data_logs
+  walk2(
+    .x = clean_data_logs,
+    .y = names(clean_data_logs),
+    .f = function(df, name) {
+      writexl::write_xlsx(df$my_clean_data_final, paste0("03_output/05_clean_data/final_clean_", name, "_data.xlsx"))
+      writexl::write_xlsx(df$raw_data, paste0("03_output/01_raw_data/raw_data_", name, ".xlsx"))
+      writexl::write_xlsx(df$deletion_log, paste0("03_output/02_deletion_log/deletion_log_", name, ".xlsx"))
+    }
+  )
 
-    review_cleaning <- review_cleaning(x$raw_data,
-                                       raw_dataset_uuid_column = "uuid",
-                                       x$my_clean_data_final,
-                                       clean_dataset_uuid_column = "uuid",
-                                       cleaning_log = x$cleaning_log,
-                                       cleaning_log_uuid_column = "uuid",
-                                       cleaning_log_change_type_column = "change_type",
-                                       cleaning_log_question_column = "question",
-                                       cleaning_log_new_value_column = "new_value",
-                                       cleaning_log_old_value_column = "old_value",
-                                       cleaning_log_added_survey_value = "added_survey",
-                                       cleaning_log_no_change_value = c("no_action", "no_change"),
-                                       deletion_log = x$deletion_log,
-                                       deletion_log_uuid_column = "uuid",
-                                       check_for_deletion_log = T
-    )
-
-    review_cleaning <- review_cleaning %>%
-      left_join(cleaning_logs %>% select(uuid, file_path) %>% distinct(), by = "uuid")
-
-    review_cleaning = review_cleaning
-
+  ### combine the clog together
+  all_cleaning_logs <- purrr::map(clean_data_logs, function(x){
+    ...
   })
 
 
-  writexl::write_xlsx(clog_issues, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
-
-
-  # ──────────────────────────────────────────────────────────────────────────────
-  # 4. Output everything
-  # ──────────────────────────────────────────────────────────────────────────────
-
-  all_cleaning_logs %>%
-    writexl::write_xlsx(., "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
-
-  clean_data_logs$main$my_clean_data_final %>%
-    writexl::write_xlsx(., "03_output/05_clean_data/final_clean_main_data.xlsx")
 
 
 
-  clean_data_logs$main$raw_data %>%
-    writexl::write_xlsx(., "03_output/01_raw_data/raw_data_main.xlsx")
 
 
 
-  deletion_log %>%
-    writexl::write_xlsx(., "03_output/02_deletion_log/combined_deletion_log.xlsx")
+  # 1. Combine all cleaning logs
+  all_cleaning_logs <- purrr::map_dfr(clean_data_logs, ~ .x$cleaning_log)
 
+  # 2. Write the full cleaning log
+  writexl::write_xlsx(all_cleaning_logs, "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
+
+  # 3. Check if 'main' exists in clean_data_logs
+  # 3. Check if 'main' exists in clean_data_logs
+  if ("main" %in% names(clean_data_logs)) {
+    # Export clean and raw data
+    ...
+  } else if ("main" %in% names(all_raw_data)) {
+    warning("⚠️ 'main' not found in clean_data_logs. Exporting raw main only.")
+
+    writexl::write_xlsx(all_raw_data$main, "03_output/01_raw_data/raw_data_main.xlsx")
+
+    if (exists("deletion_log")) {
+      clean_main <- all_raw_data$main %>%
+        filter(!index %in% deletion_log$index)
+
+      writexl::write_xlsx(clean_main, "03_output/05_clean_data/final_clean_main_data.xlsx")
+      writexl::write_xlsx(deletion_log, "03_output/02_deletion_log/combined_deletion_log.xlsx")
+    }
+  }
+
+
+} else {
+  message("No cleaning logs provided... Making clean data just from deletion logs.")
+
+  all_dlogs <- readxl::read_excel("03_output/02_deletion_log/deletion_log.xlsx", col_types = "text")
+
+  deletion_log <- all_dlogs %>%
+    distinct(uuid, .keep_all = TRUE)
+
+  raw_main <- all_raw_data$main
+
+  if (is.data.frame(raw_main)) {
+    raw_main_clean <- raw_main %>%
+      filter(!index %in% deletion_log$index)
+
+    writexl::write_xlsx(raw_main_clean, "03_output/05_clean_data/final_clean_main_data.xlsx")
+    writexl::write_xlsx(raw_main, "03_output/01_raw_data/raw_data_main.xlsx")
+    writexl::write_xlsx(deletion_log, "03_output/02_deletion_log/combined_deletion_log.xlsx")
+  } else {
+    warning("⚠️ all_raw_data$main is not a data frame")
+  }
 }
-
 
 
 # ──────────────────────────────────────────────────────────────────────────────

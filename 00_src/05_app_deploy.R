@@ -8,7 +8,9 @@ library(purrr)
 library(tidyr)
 library(stringr)
 library(lubridate)
+
 library(shiny)
+
 library(shinydashboard)
 library(reactable)
 
@@ -18,6 +20,7 @@ print("----------PACAKAGES SUCCESSFULLY LOADED-----------------")
 message("Loading data...")
 sampling_frame <- readxl::read_excel("02_input/03_sampling/sampling_frame_final.xlsx") %>%
   janitor::clean_names()
+
 
 ### clean data
 
@@ -44,7 +47,10 @@ clean_data <- clean_data %>%
     left_join(fo_district_mapping %>% select(-admin_1_name), by = join_by("admin1" == "admin_1_pcode"))
 
 clean_data <- clean_data   %>%
-    filter(!is.na(fo))
+    filter(!is.na(fo)) %>%
+  mutate(sampling_id = ifelse(camp_or_hc == "host_community", admin_2_camp, admin_3_camp))
+
+
 
 message("----------DATA SUCCESSFULLY LOADED-----------------")
 
@@ -56,16 +62,13 @@ message("----------DATA SUCCESSFULLY LOADED-----------------")
 
 
 interview_count_a2 <- clean_data %>%
-  count(admin_2_camp, name = "Surveys_Done") %>%
-  rename(admin_2_name = admin_2_camp) %>%
-  mutate(admin_2_name = tolower(admin_2_name))
+  count(sampling_id, name = "Surveys_Done")
 
 admin_2_done <- sampling_frame %>%
   left_join(fo_district_mapping %>% select(admin_1_pcode, fo), join_by(admin_1_pcode)) %>%
-  mutate(admin_2_name = tolower(admin_2_name)) %>%
   rename(Surveys_Target = sample_size) %>%
   left_join(interview_count_a2) %>%
-  select(fo, admin_1_name, admin_2_name, Surveys_Done, Surveys_Target) %>%
+  select(fo, admin_1_name, sampling_id, Surveys_Done, Surveys_Target) %>%
   mutate(Complete = ifelse(Surveys_Done >= Surveys_Target, "Yes", "No")) %>%
   mutate(Complete = ifelse(is.na(Complete), "No", Complete))
 
@@ -80,24 +83,24 @@ admin_2_done %>%
 # Site level Completion
 #--------------------------------------------------------
 
-
-geo_ref_data <- readxl::read_excel("02_input/07_geo_reference_data/ken_geo_ref_data.xlsx", sheet = "ward")
-
-geo_admin3 <- geo_ref_data %>%
-  distinct(admin_3_pcode, admin_3_name) %>%
-  mutate(admin_3_name = tolower(admin_3_name))
-
-interview_count_a3 <- clean_data %>%
-  count(admin_3_camp, name = "Surveys_Done") %>%
-  rename(admin_3_name = admin_3_camp) %>%
-  mutate(admin_3_name = tolower(admin_3_name))
-
-admin_3_level_completion <- geo_admin3 %>%
-  left_join(interview_count_a3)
-
-
-admin_3_level_completion %>%
-  writexl::write_xlsx(., paste0("03_output/07_daily_completion/admin_3_level_completion_", today(), ".xlsx"))
+#
+# geo_ref_data <- readxl::read_excel("02_input/07_geo_reference_data/ken_geo_ref_data.xlsx", sheet = "ward")
+#
+# geo_admin3 <- geo_ref_data %>%
+#   distinct(admin_3_pcode, admin_3_name) %>%
+#   mutate(admin_3_name = tolower(admin_3_name))
+#
+# interview_count_a3 <- clean_data %>%
+#   count(admin_3_camp, name = "Surveys_Done") %>%
+#   rename(admin_3_name = admin_3_camp) %>%
+#   mutate(admin_3_name = tolower(admin_3_name))
+#
+# admin_3_level_completion <- geo_admin3 %>%
+#   left_join(interview_count_a3)
+#
+#
+# admin_3_level_completion %>%
+#   writexl::write_xlsx(., paste0("03_output/07_daily_completion/admin_3_level_completion_", today(), ".xlsx"))
 
 ## Completion by FO
 
@@ -165,6 +168,7 @@ mean_per_day <- clean_data %>%
   summarise("Average per day" = round(mean(n))) %>%
   mutate(enum_code = as.character(enum_code))
 
+
 enum_performance <- enum_performance %>%
   left_join(mean_per_day) %>%
   select(fo, enum_code, valid, deleted, total, pct_valid, `Average per day`)
@@ -185,3 +189,5 @@ rsconnect::deployApp(appFiles =deploy_app_input,
                      appPrimaryDoc = "./00_src/04_app.R",
                      appName = "REACH_KEN_2025_MSNA",
                      account = "impact-initiatives")
+
+

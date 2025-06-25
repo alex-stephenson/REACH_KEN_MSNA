@@ -30,7 +30,7 @@ library(robotoolbox)
 library(impactR4PHU)
 
 
-#date_to_filter <- "2025-06-15"
+date_to_filter <- "2025-06-20"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 source("00_src/00_utils.R")
@@ -50,14 +50,22 @@ geo_admin3 <- geo_ref_data %>%
 
 
 
-kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v1.xlsx"
+kobo_tool_name <- "04_tool/REACH_KEN_2025_MSNA-Tool_v7.xlsx"
 questions <- read_excel(kobo_tool_name, sheet = "survey")
 choices <- read_excel(kobo_tool_name, sheet = "choices")
 
 
-asset_id <- "a4kprTX3YyfQXvnko6KTRS"
+asset_id <- "ak5iQFpNGQpXcgGRrpEKjN"
 
-raw_kobo <- ImpactFunctions::get_kobo_data(asset_id = asset_id, un = "alex_stephenson")
+data_file_path <- "02_input/00_data_download/REACH_KEN_2025_MSNA.xlsx"
+sheet_names <- readxl::excel_sheets(data_file_path)
+
+raw_kobo <- map(sheet_names, ~ read_excel(data_file_path, sheet = .x))
+
+sheet_names[1] <- "main"
+names(raw_kobo) <- sheet_names
+
+#raw_kobo <- ImpactFunctions::get_kobo_data(asset_id = asset_id, un = "alex_stephenson")
 
 #form <- robotoolbox::kobo_form(asset_id)
 raw_kobo_data <- raw_kobo %>%
@@ -69,7 +77,7 @@ raw_kobo_data <- raw_kobo %>%
   mutate(across(starts_with("_other"), as.character)) %>%
   ### this code is quite ugly but basically just adds the admin names instead of pcodes, and also combines the admin and refugee site into one
   left_join(geo_admin1, by = join_by("admin1" == "admin_1_pcode")) %>%
-  mutate(admin_1_camp = admin_1_name) %>%
+  mutate(admin_1_camp = admin1) %>%
   left_join(geo_admin2, by = join_by("admin2" == "admin_2_pcode")) %>%
   mutate(admin_2_camp = ifelse(is.na(admin2), refugee_camp, admin_2_name)) %>%
   left_join(geo_admin3, by = join_by("admin3" == "admin_3_pcode")) %>%
@@ -77,7 +85,6 @@ raw_kobo_data <- raw_kobo %>%
   relocate(admin_1_camp, .after = admin1) %>%
   relocate(admin_2_camp, .after = admin2) %>%
   relocate(admin_3_camp, .after = admin3)
-
 
 #### here we will do some transformation of the repeat sections
 source("00_src/00_coerce_columns.R")
@@ -133,32 +140,32 @@ data_with_fo <- data_with_fo   %>%
 # 2. Filter for time and export deleted surveys
 # ──────────────────────────────────────────────────────────────────────────────
 
-mindur <- 25
-maxdur <- 120
-
-set.seed(124)
-data_with_time <- data_with_fo %>%
-  mutate(interview_duration = runif(nrow(data_with_fo), 10, 130))
+mindur <- 19
+maxdur <- 150
 
 
-#kobo_data_metadata <- get_kobo_metadata(dataset = data_with_fo, un = "alex_stephenson", asset_id = asset_id, remove_geo = T)
-#data_with_time <- kobo_data_metadata$df_and_duration
-#raw_metadata_length <- kobo_data_metadata$audit_files_length
-#write_rds(raw_metadata_length, "03_output/01_raw_data/raw_metadata.rds")
+kobo_data_metadata <- get_kobo_metadata(dataset = data_with_fo, un = "alex_stephenson", asset_id = asset_id, remove_geo = T)
+data_with_time <- kobo_data_metadata$df_and_duration
+raw_metadata_length <- kobo_data_metadata$audit_files_length
+write_rds(raw_metadata_length, "03_output/01_raw_data/raw_metadata.rds")
 
 
 data_in_processing <- data_with_time %>%
   mutate(length_valid = case_when(
-    interview_duration < mindur ~ "Too short",
-    interview_duration > maxdur ~ "Too long",
+    interview_duration <= mindur ~ "Too short",
+    interview_duration >= maxdur ~ "Too long",
     TRUE ~ "Okay"
-  ))
+  )) %>%
+  mutate(length_valid = ifelse(interview_duration > 15 & interview_duration < 20 & hh_size < 5, "Okay", length_valid),
+         length_valid = ifelse(interview_duration > 10 & interview_duration < 15 & hh_size < 2, "Okay", length_valid))
 
+remove_deletions <- readxl::read_excel("02_input/08_remove_deletions/remove_deletions.xlsx")
 
 deletion_log <- data_in_processing %>%
   filter(length_valid != "Okay") %>%
   select(uuid, length_valid, admin1, admin_2_camp, admin_3_camp, enum_id, interview_duration) %>%
-  left_join(raw_kobo_data %>% select(uuid, index), by = "uuid")
+  left_join(raw_kobo_data %>% select(uuid, index), by = "uuid") %>%
+  filter(! uuid %in% remove_deletions$uuid)
 
 
 deletion_log %>%
@@ -168,6 +175,10 @@ deletion_log %>%
 
 ## filter only valid surveys and for the specific date
 data_valid_date <- data_in_processing %>%
+  mutate(length_valid = case_when(
+    uuid %in% remove_deletions$uuid ~ "Okay",
+    TRUE ~ length_valid
+  )) %>%
   filter(length_valid == "Okay") #%>%
  # filter(today == date_to_filter)
 
@@ -207,7 +218,6 @@ outlier_cols_not_4_checking <- main_data %>%
   select(matches("geopoint|gps|_index|_submit|submission|_sample_|^_id$|rand|_calc|_Have|count_|_prop|_n|_score|Emergency|Stress|Crisis|TotalHHEXP6|TotalHHEXP|FCSG|rCSI|enum_id|hh_size|LhCSICategory|interview_duration")) %>%
   colnames()
 
-
 checked_main_data <-  main_data %>%
   check_others(
     uuid_column = "uuid",
@@ -217,18 +227,18 @@ checked_main_data <-  main_data %>%
     element_name = "checked_dataset",
     values_to_look = c(-999,-1)
   ) %>%
-  # check_outliers(
-  #   uuid_column = "uuid",
-  #   element_name = "checked_dataset",
-  #   kobo_survey = questions,
-  #   kobo_choices = choices,
-  #   cols_to_add_cleaning_log = NULL,
-  #   strongness_factor = 3,
-  #   minimum_unique_value_of_variable = 10,
-  #   remove_choice_multiple = TRUE,
-  #   sm_separator = "/",
-  #   columns_not_to_check = c(excluded_questions_in_data ,outlier_cols_not_4_checking)
-  # ) %>%
+   check_outliers(
+     uuid_column = "uuid",
+     element_name = "checked_dataset",
+     kobo_survey = questions,
+     kobo_choices = choices,
+     cols_to_add_cleaning_log = NULL,
+     strongness_factor = 4,
+     minimum_unique_value_of_variable = 5,
+     remove_choice_multiple = TRUE,
+     sm_separator = "/",
+     columns_not_to_check = c(excluded_questions_in_data ,outlier_cols_not_4_checking)
+   ) %>%
   check_logical_with_list(uuid_column = "uuid",
                           list_of_check = df_list_logical_checks,
                           check_id_column = "check_id",
@@ -295,8 +305,8 @@ checked_hh_roster <- roster %>%
     kobo_survey = questions,
     kobo_choices = choices,
     cols_to_add_cleaning_log = NULL,
-    strongness_factor = 1.5,
-    minimum_unique_value_of_variable = NULL,
+    strongness_factor = 4,
+    minimum_unique_value_of_variable = 5,
     remove_choice_multiple = TRUE,
     sm_separator = "/",
     columns_not_to_check = c(excluded_questions_in_data,outlier_cols_not_4_checking)
@@ -428,7 +438,15 @@ nut_ind_formatted <- impactR4PHU::add_iycf(.dataset = nut_ind,
                               iycf_6d_num = "drink_yoghurt")
 
 
+excluded_questions_in_data <- intersect(colnames(nut_ind), excluded_questions)
 
+# Define the pattern for columns you want to exclude
+exclude_patterns <- c("geopoint", "gps", "_index", "_submit", "submission", "_sample_", "^_id$", "^rand", "^_index$","_n","enum_id", "ind_potentially_hoh")
+
+# Use `matches` with `|` to combine patterns
+outlier_cols_not_4_checking <- nut_ind %>%
+  select(matches(paste(exclude_patterns, collapse = "|"))) %>%
+  colnames()
 
 
 checked_nut_ind_formatted <- nut_ind_formatted %>%
@@ -442,6 +460,18 @@ checked_nut_ind_formatted <- nut_ind_formatted %>%
     uuid_column = "uuid",
     element_name = "checked_dataset",
     values_to_look = c(-999,-1)
+  ) %>%
+  check_outliers(
+    uuid_column = "uuid",
+    element_name = "checked_dataset",
+    kobo_survey = questions,
+    kobo_choices = choices,
+    cols_to_add_cleaning_log = NULL,
+    strongness_factor = 3,
+    minimum_unique_value_of_variable = NULL,
+    remove_choice_multiple = TRUE,
+    sm_separator = "/",
+    columns_not_to_check = c(excluded_questions_in_data,outlier_cols_not_4_checking)
   )
 
 child_feeding_cleaning_log <-  checked_nut_ind_formatted %>%
@@ -552,7 +582,7 @@ cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[],
                                                                       output_path = paste0("01_cleaning_logs/",
                                                                                            unique(.[]$checked_dataset$fo_in_charge),
                                                                                            "/",
-                                                                                           "cleaning_log_",
+                                                                                           "final_cleaning_log_",
                                                                                            unique(.[]$checked_dataset$fo_in_charge),
                                                                                            "_",
                                                                                            date_time_now,
