@@ -30,7 +30,7 @@ library(robotoolbox)
 library(impactR4PHU)
 
 
-date_to_filter <- "2025-06-20"
+date_to_filter <- "2025-06-26"
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 source("00_src/00_utils.R")
@@ -60,7 +60,7 @@ asset_id <- "ak5iQFpNGQpXcgGRrpEKjN"
 data_file_path <- "02_input/00_data_download/REACH_KEN_2025_MSNA.xlsx"
 sheet_names <- readxl::excel_sheets(data_file_path)
 
-raw_kobo <- map(sheet_names, ~ read_excel(data_file_path, sheet = .x))
+raw_kobo <- map(sheet_names, ~ read_excel(data_file_path, sheet = .x, guess_max =  10000))
 
 sheet_names[1] <- "main"
 names(raw_kobo) <- sheet_names
@@ -70,10 +70,8 @@ names(raw_kobo) <- sheet_names
 #form <- robotoolbox::kobo_form(asset_id)
 raw_kobo_data <- raw_kobo %>%
   pluck("main") %>%
-  select(-uuid, -`_attachments`) %>%
   dplyr::rename(uuid =`_uuid`,
                 index = `_index`) %>%
-  distinct(uuid, .keep_all = T) %>%
   mutate(across(starts_with("_other"), as.character)) %>%
   ### this code is quite ugly but basically just adds the admin names instead of pcodes, and also combines the admin and refugee site into one
   left_join(geo_admin1, by = join_by("admin1" == "admin_1_pcode")) %>%
@@ -84,7 +82,16 @@ raw_kobo_data <- raw_kobo %>%
   mutate(admin_3_camp = ifelse(is.na(admin3), sub_camp, admin_3_name)) %>%
   relocate(admin_1_camp, .after = admin1) %>%
   relocate(admin_2_camp, .after = admin2) %>%
-  relocate(admin_3_camp, .after = admin3)
+  relocate(admin_3_camp, .after = admin3) %>%
+  mutate(sampling_id = ifelse(camp_or_hc == "host_community", admin_2_camp, admin_3_camp)) %>%
+  mutate(sampling_id =
+           case_when(sampling_id == "Loiyangalani Sub County" ~ "Laisamis Sub County",
+                     sampling_id == "Marsabit South Sub County" ~ "Laisamis Sub County",
+                     sampling_id == "Marsabit North Sub County" ~ "North Horr Sub County",
+                     sampling_id == "Sololo Sub County" ~ "Moyale Sub County",
+                     sampling_id == "Marsabit Central Sub County" ~ "Saku Sub County",
+                     TRUE ~ sampling_id))
+
 
 #### here we will do some transformation of the repeat sections
 source("00_src/00_coerce_columns.R")
@@ -136,6 +143,7 @@ data_with_fo <- raw_kobo_data %>%
 
 data_with_fo <- data_with_fo   %>%
   filter(!is.na(fo_in_charge))
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Filter for time and export deleted surveys
 # ──────────────────────────────────────────────────────────────────────────────
@@ -172,15 +180,15 @@ deletion_log %>%
   mutate(comment = paste0("Interview length is ", length_valid)) %>%
   select(-length_valid) %>%
   writexl::write_xlsx(., paste0("03_output/02_deletion_log/deletion_log.xlsx"))
-
+`
 ## filter only valid surveys and for the specific date
 data_valid_date <- data_in_processing %>%
   mutate(length_valid = case_when(
     uuid %in% remove_deletions$uuid ~ "Okay",
     TRUE ~ length_valid
   )) %>%
-  filter(length_valid == "Okay") #%>%
- # filter(today == date_to_filter)
+ filter(length_valid == "Okay") %>%
+  filter(today == max(today))
 
 main_data <- data_valid_date
 
@@ -289,7 +297,6 @@ excluded_questions_in_data <- intersect(colnames(roster), excluded_questions)
 # Define the pattern for columns you want to exclude
 exclude_patterns <- c("geopoint", "gps", "_index", "_submit", "submission", "_sample_", "^_id$", "^rand", "^_index$","_n","enum_id", "ind_potentially_hoh")
 
-# Use `matches` with `|` to combine patterns
 outlier_cols_not_4_checking <- roster %>%
   select(matches(paste(exclude_patterns, collapse = "|"))) %>%
   colnames()
@@ -443,7 +450,7 @@ excluded_questions_in_data <- intersect(colnames(nut_ind), excluded_questions)
 # Define the pattern for columns you want to exclude
 exclude_patterns <- c("geopoint", "gps", "_index", "_submit", "submission", "_sample_", "^_id$", "^rand", "^_index$","_n","enum_id", "ind_potentially_hoh")
 
-# Use `matches` with `|` to combine patterns
+# Use matches with | to combine patterns
 outlier_cols_not_4_checking <- nut_ind %>%
   select(matches(paste(exclude_patterns, collapse = "|"))) %>%
   colnames()
@@ -471,7 +478,7 @@ checked_nut_ind_formatted <- nut_ind_formatted %>%
     minimum_unique_value_of_variable = NULL,
     remove_choice_multiple = TRUE,
     sm_separator = "/",
-    columns_not_to_check = c(excluded_questions_in_data,outlier_cols_not_4_checking)
+    columns_not_to_check = c(excluded_questions_in_data,outlier_cols_not_4_checking, "time_breastfeeding_hours")
   )
 
 child_feeding_cleaning_log <-  checked_nut_ind_formatted %>%
