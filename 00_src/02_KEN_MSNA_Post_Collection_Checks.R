@@ -275,9 +275,6 @@ if(! is_empty(file_list)) {
   message("No cleaning logs provided... Making clean data just from deletion logs.")
 
 
-
-
-
   # Read in all the dlogs
   all_dlogs <- readxl::read_excel(r"(03_output/02_deletion_log/deletion_log.xlsx)", col_types = "text")
   #manual_dlog <- readxl::read_excel(r"(03_output/02_deletion_log/MSNA_2025_Manual_Deletion_Log.xlsx)", col_types = "text")
@@ -342,12 +339,68 @@ if(! is_empty(file_list)) {
   writexl::write_xlsx(clog_issues, paste0("01_cleaning_logs/00_clog_review/cleaning_log_review_", lubridate::today(), ".xlsx"))
 
 
+  ### add indicators to the cleaned main data
+
+  clean_data_logs$main$my_clean_data_final <- clean_data_logs$main$my_clean_data_final %>%
+    mutate(fsl_hhs_nofoodhh = ifelse(fsl_hhs_nofoodhh == "dnk" | fsl_hhs_nofoodhh == "pnta", NA, fsl_hhs_nofoodhh),
+           fsl_hhs_alldaynight = ifelse(fsl_hhs_alldaynight == "dnk" | fsl_hhs_alldaynight == "pnta", NA, fsl_hhs_alldaynight),
+           fsl_hhs_sleephungry = ifelse(fsl_hhs_sleephungry == "dnk" | fsl_hhs_sleephungry == "pnta", NA, fsl_hhs_sleephungry)) %>%
+    add_eg_hhs(
+      hhs_nofoodhh_1 = "fsl_hhs_nofoodhh",
+      hhs_nofoodhh_1a = "fsl_hhs_nofoodhh_freq",
+      hhs_sleephungry_2 = "fsl_hhs_sleephungry",
+      hhs_sleephungry_2a = "fsl_hhs_sleephungry_freq",
+      hhs_alldaynight_3 = "fsl_hhs_alldaynight",
+      hhs_alldaynight_3a = "fsl_hhs_alldaynight_freq",
+      yes_answer = "yes",
+      no_answer = "no",
+      rarely_answer = "rarely",
+      sometimes_answer = "sometimes",
+      often_answer = "often"
+    ) %>%
+    add_eg_lcsi(
+      lcsi_stress_vars = c("fsl_lcsi_stress1", "fsl_lcsi_stress2", "fsl_lcsi_stress3", "fsl_lcsi_stress4"),
+      lcsi_crisis_vars = c("fsl_lcsi_crisis1", "fsl_lcsi_crisis2", "fsl_lcsi_crisis3"),
+      lcsi_emergency_vars = c("fsl_lcsi_emergency1", "fsl_lcsi_emergency2", "fsl_lcsi_emergency3"),
+      yes_val = "yes",
+      no_val = "no_had_no_need",
+      exhausted_val = "no_exhausted",
+      not_applicable_val = "not_applicable") %>%
+    add_eg_rcsi(
+      rCSILessQlty = "fsl_rcsi_lessquality",
+      rCSIBorrow = "fsl_rcsi_borrow",
+      rCSIMealSize = "fsl_rcsi_mealsize",
+      rCSIMealAdult = "fsl_rcsi_mealadult",
+      rCSIMealNb = "fsl_rcsi_mealnb",
+      new_colname = "rcsi"
+    ) %>%
+    add_eg_fcm_phase(
+      fcs_column_name = "FCSGName",
+      rcsi_column_name = "rcsi_cat",
+      hhs_column_name = "hhs_cat_ipc",
+      fcs_categories_acceptable = "Acceptable",
+      fcs_categories_poor = "Poor",
+      fcs_categories_borderline = "Borderline",
+      rcsi_categories_low = "No to Low",
+      rcsi_categories_medium = "Medium",
+      rcsi_categories_high = "High",
+      hhs_categories_none = "None",
+      hhs_categories_little = "Little",
+      hhs_categories_moderate = "Moderate",
+      hhs_categories_severe = "Severe",
+      hhs_categories_very_severe = "Very Severe"
+    )
+
   # ──────────────────────────────────────────────────────────────────────────────
   # 4. Output everything
   # ──────────────────────────────────────────────────────────────────────────────
 
   all_cleaning_logs %>%
     writexl::write_xlsx(., "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
+
+  clean_data_logs %>%
+    write_rds(., "03_output/06_final_cleaning_log/final_all_r_object.rds")
+
 
   clean_data_logs$main$my_clean_data_final %>%
     writexl::write_xlsx(., "03_output/05_clean_data/final_clean_main_data.xlsx")
@@ -397,11 +450,6 @@ soft_per_enum <- group_by_enum %>%
                                      threshold = 5
   )
   )
-
-
-
-
-
 
 
 
