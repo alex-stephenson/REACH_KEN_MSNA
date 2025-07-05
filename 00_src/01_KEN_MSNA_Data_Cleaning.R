@@ -179,7 +179,7 @@ deletion_log %>%
   mutate(comment = paste0("Interview length is ", length_valid)) %>%
   select(-length_valid) %>%
   writexl::write_xlsx(., paste0("03_output/02_deletion_log/deletion_log.xlsx"))
-`
+
 ## filter only valid surveys and for the specific date
 data_valid_date <- data_in_processing %>%
   mutate(length_valid = case_when(

@@ -30,6 +30,7 @@ library(tidyverse)
 library(cleaningtools)
 library(readxl)
 library(ImpactFunctions)
+library(addindicators)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Read in all data (raw, clogs, FO, tool)
@@ -83,7 +84,8 @@ if(! is_empty(file_list)) {
   cleaning_logs <- map_dfr(file_list, sheet = 'cleaning_log', read_and_clean)
 
   cleaning_logs <- cleaning_logs %>%
-    filter(! is.na(change_type))
+    filter(! is.na(change_type)) %>%
+    mutate(new_value = ifelse(change_type == "no_action" & is.na(new_value), old_value, new_value))
 
   ## now we split the clogs by the clog type, we manually coded at the end of the last script.
 
@@ -137,17 +139,17 @@ if(! is_empty(file_list)) {
   message("Reviewing clogs...")
   Sys.sleep(1)
 
-  clog_review <- purrr::map(list_of_df_and_clog, function(x) {
-    clog_review <- cleaningtools::review_cleaning_log(
-      raw_dataset = x$raw_data,
-      raw_data_uuid_column = "uuid",
-      cleaning_log = x$cleaning_log,
-      cleaning_log_change_type_column = "change_type",
-      change_response_value = "change_response",
-      cleaning_log_question_column = "question",
-      cleaning_log_uuid_column = "uuid",
-      cleaning_log_new_value_column = "new_value")
-  })
+  # clog_review <- purrr::map(list_of_df_and_clog, function(x) {
+  #   clog_review <- cleaningtools::review_cleaning_log(
+  #     raw_dataset = x$raw_data,
+  #     raw_data_uuid_column = "uuid",
+  #     cleaning_log = x$cleaning_log,
+  #     cleaning_log_change_type_column = "change_type",
+  #     change_response_value = "change_response",
+  #     cleaning_log_question_column = "question",
+  #     cleaning_log_uuid_column = "uuid",
+  #     cleaning_log_new_value_column = "new_value")
+  # })
 
   message("Updating clogs and recoding others")
   Sys.sleep(1)
@@ -181,7 +183,7 @@ if(! is_empty(file_list)) {
   message("✅ Creating clean data...")
   Sys.sleep(3)
 
-  clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
+clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
 
     message(paste0("creating clean data for: ", x$cleaning_log$clog_type[1]))
 
@@ -221,6 +223,23 @@ if(! is_empty(file_list)) {
     relevant_kobo_choices <- kobo_choice %>%
       filter(list_name %in% relevant_list_names)
 
+    temp_clog_type <- x$cleaning_log$clog_type[1]
+
+    if (temp_clog_type != "main") {
+
+      processing_del_log <- x$pre_raw_data %>%
+        select(index, uuid, contains("parent_instance"))
+
+      deletion_log <- processing_del_log %>%
+        filter(index %in% deletion_log$index)
+
+    } else {
+
+      deletion_log = deletion_log
+
+    }
+
+
     if(nrow(relevant_kobo_survey != 0)) {
 
       message(paste0("✅ Successfully filtered tool, now making parent cols for: ", x$cleaning_log$clog_type[1]))
@@ -247,7 +266,7 @@ if(! is_empty(file_list)) {
     } else {
 
       message(paste0("✅ No select multiple questions for ", x$cleaning_log$clog_type[1], " returning existing clog."))
-      Sys.sleep(8)
+      Sys.sleep(5)
 
       return(list(
         raw_data = x$pre_raw_data %>% utils::type.convert(as.is = TRUE),
@@ -484,5 +503,27 @@ similar_survey_output %>%
   writexl::write_xlsx(., similar_survey_export_path)
 
 
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. Review FCS Scores
+# ──────────────────────────────────────────────────────────────────────────────
+
+clean_data_logs$main$my_clean_data_final %>%
+  ggplot(aes(FCS)) +
+  geom_histogram() +
+  geom_vline(xintercept =  70, colour = "orangered3", linetype = "dashed", linewidth = 0.5) +
+  geom_vline(xintercept =  10, colour = "orangered3", linetype = "dashed", linewidth = 0.5) +
+  facet_wrap(~ camp_or_hc)
+
+clean_data_logs$main$my_clean_data_final %>%
+  group_by(camp_or_hc) %>%
+  summarise(avg_fcs = mean(FCS, na.rm = T))
+
+clean_data_logs$main$my_clean_data_final %>%
+  ggplot(., aes(x= camp_or_hc, y = FCS)) +
+  geom_boxplot(fill="slateblue", alpha=0.2) +
+  geom_jitter(color="black", size=0.2, alpha=0.5) +
+  xlab("")
 
 

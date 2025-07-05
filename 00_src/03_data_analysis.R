@@ -195,11 +195,21 @@ walk2(clean_data_analysis, names(clean_data_analysis), function(df, name){
 
 ### this is not finalised yet.
 
-presentresults::create_ipc_table(
-    results_table = clean_data_analysis$main$results_tbl,
+ipc_data <- clean_data_joined$main %>%
+  filter(!(is.na(fsl_hhs_nofoodhh_freq) | is.na(fsl_hhs_sleephungry_freq) | is.na(fsl_hhs_alldaynight_freq)))
+
+ipc_results_tbl <- clean_data_analysis$main$results_tbl %>%
+  filter(
+    !(is.na(analysis_var_value) & analysis_var %in% c("fsl_hhs_nofoodhh_freq",
+                                                      "fsl_hhs_sleephungry_freq",
+                                                      "fsl_hhs_alldaynight_freq"))
+  )
+
+IPC_output <- presentresults::create_ipc_table(
+    results_table = ipc_results_tbl,
     analysis_key = "analysis_key",
     dataset = clean_data_joined$main,
-    cluster_name = sampling_id,
+    cluster_name = "sampling_id",
     fcs_cat_var = "FCSGName",
     fcs_cat_values = c("Poor", "Borderline", "Acceptable"),
     fcs_set = c("fsl_fcs_cereal", "fsl_fcs_legumes", "fsl_fcs_veg", "fsl_fcs_fruit",
@@ -241,6 +251,16 @@ presentresults::create_ipc_table(
     mean_name = "mean"
   )
 
+create_xlsx_group_x_variable(
+  IPC_output,
+  table_name = "ipc_table",
+  dataset_name = "dataset",
+  file_path = "05_HQ_validation/02_results_tables/IPC/IPC_reslts_table.xlsx",
+  table_sheet = "ipc_table",
+  dataset_sheet = "dataset",
+  write_file = TRUE,
+  overwrite = TRUE
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
