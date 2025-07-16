@@ -123,6 +123,13 @@ names(roster_outputs) <- roster_uuids$name
 
 roster_outputs[['main']] <- raw_kobo_data
 
+roster_outputs[['edu_ind']] <- roster_outputs[['edu_ind']] %>%
+  filter(!is.na(edu_access))
+
+roster_outputs[['nut_ind']] <- roster_outputs[['nut_ind']] %>%
+  mutate(nut_ind_age = as.numeric(nut_ind_age)) %>%
+  filter(nut_ind_age < 5)
+
 roster_outputs %>%
   write_rds(., "03_output/01_raw_data/all_raw_data.rds")
 
@@ -593,6 +600,9 @@ cleaning_log %>% purrr::map(~ create_xlsx_cleaning_log(.[],
                                                                                            "_",
                                                                                            date_time_now,
                                                                                            ".xlsx")))
+
+
+
 
 
 

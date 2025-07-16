@@ -55,7 +55,9 @@ kobo_choice <- read_excel(kobo_tool_name, sheet = "choices")
 file_list <- list.files(path = "01_cleaning_logs", recursive = TRUE, full.names = TRUE)
 
 file_list <- file_list %>%
-  keep(~ str_detect(.x, "complete"))
+  keep(~ str_detect(.x, "complete")) %>%
+  keep(~ str_detect(.x, "final"))
+
 
 #file_list <- file_list %>%
 #  keep(~ str_detect(.x, "Complete"))
@@ -159,6 +161,7 @@ if(! is_empty(file_list)) {
     # process the clogs to update the others and remove items from the clogs
     cleaned_log <- x$cleaning_log %>%
       filter(!index %in% deletion_log$index) %>% ## needs to be the index not the UUID because index is the same across all rosters, where as UUID is unique to the roster
+      filter(uuid %in% x$raw_data$uuid) %>%
       mutate(new_value = as.character(new_value))
 
     temp_clog_type <- cleaned_log$clog_type[1]
@@ -181,13 +184,13 @@ if(! is_empty(file_list)) {
   ### apply the cleaning log to each items in the list
 
   message("✅ Creating clean data...")
-  Sys.sleep(3)
+  Sys.sleep(2)
 
 clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
 
     message(paste0("creating clean data for: ", x$cleaning_log$clog_type[1]))
 
-    Sys.sleep(5)
+    Sys.sleep(2)
 
     my_clean_data <- create_clean_data(raw_dataset = x$raw_data,
                                        raw_data_uuid_column = "uuid",
@@ -243,7 +246,7 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
     if(nrow(relevant_kobo_survey != 0)) {
 
       message(paste0("✅ Successfully filtered tool, now making parent cols for: ", x$cleaning_log$clog_type[1]))
-      Sys.sleep(8)
+      Sys.sleep(2)
 
 
       my_clean_data_parentcol <- recreate_parent_column(dataset = my_clean_data,
@@ -266,7 +269,7 @@ clean_data_logs <- purrr::map(cleaning_log_summaries, function(x) {
     } else {
 
       message(paste0("✅ No select multiple questions for ", x$cleaning_log$clog_type[1], " returning existing clog."))
-      Sys.sleep(5)
+      Sys.sleep(2)
 
       return(list(
         raw_data = x$pre_raw_data %>% utils::type.convert(as.is = TRUE),
@@ -361,9 +364,12 @@ if(! is_empty(file_list)) {
   ### add indicators to the cleaned main data
 
   clean_data_logs$main$my_clean_data_final <- clean_data_logs$main$my_clean_data_final %>%
+    select(-FCSG, -FCS, -FCSGName) %>%
     mutate(fsl_hhs_nofoodhh = ifelse(fsl_hhs_nofoodhh == "dnk" | fsl_hhs_nofoodhh == "pnta", NA, fsl_hhs_nofoodhh),
            fsl_hhs_alldaynight = ifelse(fsl_hhs_alldaynight == "dnk" | fsl_hhs_alldaynight == "pnta", NA, fsl_hhs_alldaynight),
            fsl_hhs_sleephungry = ifelse(fsl_hhs_sleephungry == "dnk" | fsl_hhs_sleephungry == "pnta", NA, fsl_hhs_sleephungry)) %>%
+    add_eg_fcs(
+      cutoffs = "normal") %>%
     add_eg_hhs(
       hhs_nofoodhh_1 = "fsl_hhs_nofoodhh",
       hhs_nofoodhh_1a = "fsl_hhs_nofoodhh_freq",
@@ -394,7 +400,7 @@ if(! is_empty(file_list)) {
       new_colname = "rcsi"
     ) %>%
     add_eg_fcm_phase(
-      fcs_column_name = "FCSGName",
+      fcs_column_name = "fsl_fcs_cat",
       rcsi_column_name = "rcsi_cat",
       hhs_column_name = "hhs_cat_ipc",
       fcs_categories_acceptable = "Acceptable",
@@ -415,27 +421,22 @@ if(! is_empty(file_list)) {
   # ──────────────────────────────────────────────────────────────────────────────
 
   all_cleaning_logs %>%
+    filter(question != "index") %>%
     writexl::write_xlsx(., "03_output/06_final_cleaning_log/final_agg_cleaning_log.xlsx")
 
   clean_data_logs %>%
     write_rds(., "03_output/06_final_cleaning_log/final_all_r_object.rds")
 
-
   clean_data_logs$main$my_clean_data_final %>%
     writexl::write_xlsx(., "03_output/05_clean_data/final_clean_main_data.xlsx")
 
-
-
   clean_data_logs$main$raw_data %>%
     writexl::write_xlsx(., "03_output/01_raw_data/raw_data_main.xlsx")
-
-
 
   deletion_log %>%
     writexl::write_xlsx(., "03_output/02_deletion_log/combined_deletion_log.xlsx")
 
 }
-
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -518,7 +519,7 @@ clean_data_logs$main$my_clean_data_final %>%
 
 clean_data_logs$main$my_clean_data_final %>%
   group_by(camp_or_hc) %>%
-  summarise(avg_fcs = mean(FCS, na.rm = T))
+  summarise(avg_fcs = mean(fsl_fcs_score, na.rm = T))
 
 clean_data_logs$main$my_clean_data_final %>%
   ggplot(., aes(x= camp_or_hc, y = FCS)) +
@@ -526,4 +527,13 @@ clean_data_logs$main$my_clean_data_final %>%
   geom_jitter(color="black", size=0.2, alpha=0.5) +
   xlab("")
 
+clean_data$main$my_clean_data_final %>%
+  ggplot(aes(fsl_fcs_score)) +
+  geom_histogram() +
+  geom_vline(xintercept =  70, colour = "orangered3", linetype = "dashed", linewidth = 0.5) +
+  geom_vline(xintercept =  10, colour = "orangered3", linetype = "dashed", linewidth = 0.5) +
+  facet_wrap(~ camp_or_hc)
 
+clean_data$main$my_clean_data_final %>%
+  filter(fsl_fcs_score < 10) %>%
+  nrow()
