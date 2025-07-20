@@ -206,35 +206,35 @@
   # 5. Output IPC tables
   # ──────────────────────────────────────────────────────────────────────────────
 
+  loa_ipc <- loa$main %>%
+    filter(group_var %in% c(NA, "admin_1_name"))
+
   ipc_data <- clean_data_joined$main %>%
-    filter(!(is.na(fsl_hhs_nofoodhh_freq) |
-              is.na(fsl_hhs_sleephungry_freq) |
-               is.na(fsl_hhs_alldaynight_freq) |
-               is.na(lcsi_cat) |
-               is.na(hhs_cat_ipc)))
+    filter(camp_or_hc == "host_community") %>%
+    mutate(fsl_hhs_nofoodhh_freq = ifelse(is.na(fsl_hhs_nofoodhh_freq), "never", fsl_hhs_nofoodhh_freq),
+           fsl_hhs_sleephungry_freq = ifelse(is.na(fsl_hhs_sleephungry_freq), "never", fsl_hhs_sleephungry_freq),
+           fsl_hhs_alldaynight_freq = ifelse(is.na(fsl_hhs_alldaynight_freq), "never", fsl_hhs_alldaynight_freq)) %>%
+    filter(!is.na(fsl_lcsi_stress4)) %>%
+    filter(!is.na(hhs_cat_ipc))
 
+  ipc_data_survey <- ipc_data %>%
+    as_survey_design(strata = "sampling_id", weights = weights) %>%
+    create_analysis(., loa = loa_ipc, sm_separator = "/")
 
-  lcsi_names <- ipc_data %>% select(matches("fsl_lcsi_stress|fsl_lcsi_crisis|fsl_lcsi_emerg")) %>% colnames()
+  IPC_results_table <- ipc_data_survey$results_table
 
+  IPC_label_dictionary <- create_label_dictionary(questions,
+                                              choices,
+                                              label_column = "label::english (en)",
+                                              results_table = IPC_results_table)
 
-  ipc_results_tbl <- clean_data_analysis$main$results_tbl %>%
-    filter(
-      !((is.na(analysis_var_value)  | analysis_var_value == "") & analysis_var %in% c(
-        "fsl_hhs_nofoodhh_freq",
-        "fsl_hhs_nofoodhh",
-        "fsl_hhs_sleephungry",
-        "fsl_hhs_sleephungry_freq",
-        "fsl_hhs_alldaynight",
-        "fsl_hhs_alldaynight_freq",
-        "hhs_cat_ipc",
-        "fsl_hhs_nofoodhh",
-        "lcsi_cat", lcsi_names
-      ))
-    )
+  IPC_results_table_labelled <- add_label_columns_to_results_table(
+    IPC_results_table,
+    IPC_label_dictionary)
 
 
 IPC_output <- presentresults::create_ipc_table(
-      results_table = ipc_results_tbl,
+      results_table = IPC_results_table,
       analysis_key = "analysis_key",
       dataset = ipc_data,
       cluster_name = "sampling_id",
@@ -248,7 +248,7 @@ IPC_output <- presentresults::create_ipc_table(
       hhs_value_yesno_set = c("yes", "no"),
       hhs_cat_freq_set = c("fsl_hhs_nofoodhh_freq", "fsl_hhs_sleephungry_freq",
                            "fsl_hhs_alldaynight_freq"),
-      hhs_value_freq_set = c("rarely", "sometimes", "often"),
+      hhs_value_freq_set = c("rarely", "sometimes", "often", "never"),
       rcsi_cat_var = "rcsi_cat",
       rcsi_cat_values = c("No to Low", "Medium", "High"),
       rcsi_set = c("fsl_rcsi_lessquality", "fsl_rcsi_borrow", "fsl_rcsi_mealsize",
@@ -283,7 +283,7 @@ create_xlsx_group_x_variable(
   IPC_output,
   table_name = "ipc_table",
   dataset_name = "dataset",
-  file_path = "05_HQ_validation/02_results_tables/IPC/IPC_reslts_table.xlsx",
+  file_path = "05_HQ_validation/02_results_tables/IPC/IPC_reslts_table_HC_test.xlsx",
   table_sheet = "ipc_table",
   dataset_sheet = "dataset",
   write_file = TRUE,
