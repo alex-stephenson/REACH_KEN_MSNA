@@ -60,7 +60,7 @@ asset_id <- "ak5iQFpNGQpXcgGRrpEKjN"
 data_file_path <- "02_input/00_data_download/REACH_KEN_2025_MSNA.xlsx"
 sheet_names <- readxl::excel_sheets(data_file_path)
 
-raw_kobo <- map(sheet_names, ~ read_excel(data_file_path, sheet = .x, guess_max =  10000))
+raw_kobo <- map(sheet_names, ~ read_excel(data_file_path, sheet = .x, guess_max =  500000))
 
 sheet_names[1] <- "main"
 names(raw_kobo) <- sheet_names

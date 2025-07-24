@@ -24,7 +24,11 @@
       TRUE ~ `label::english (en)`
       ))
   choices <- read_excel(kobo_tool_name, sheet = "choices") %>%
-    filter(`label::english (en)` != "4. A moderate, positive impact")
+    filter(`label::english (en)` != "4. A moderate, positive impact") %>%
+    mutate(name = case_when(
+      `label::english (en)` == "Formal camp or site setting" ~ "formal_camp",
+      `label::english (en)` == "Informal camp or site setting" ~ "informal_camp"
+    ))
 
   kobo_review <- presentresults::review_kobo_labels(questions, choices, "label::english (en)")
 
@@ -207,7 +211,11 @@
   # ──────────────────────────────────────────────────────────────────────────────
 
   loa_ipc <- loa$main %>%
-    filter(group_var %in% c(NA, "admin_1_name"))
+    filter(group_var %in% c(NA, "admin_1_name", "sampling_id"))
+
+  ipc_sample_frame <- sampling_frame %>%
+    filter(str_detect(sampling_id, "County"))
+
 
   ipc_data <- clean_data_joined$main %>%
     filter(camp_or_hc == "host_community") %>%
@@ -215,7 +223,14 @@
            fsl_hhs_sleephungry_freq = ifelse(is.na(fsl_hhs_sleephungry_freq), "never", fsl_hhs_sleephungry_freq),
            fsl_hhs_alldaynight_freq = ifelse(is.na(fsl_hhs_alldaynight_freq), "never", fsl_hhs_alldaynight_freq)) %>%
     filter(!is.na(fsl_lcsi_stress4)) %>%
-    filter(!is.na(hhs_cat_ipc))
+    filter(!is.na(hhs_cat_ipc)) %>%
+    select(-weights) %>%
+    add_weights(ipc_sample_frame,
+                strata_column_dataset = "sampling_id",
+                strata_column_sample = "sampling_id",
+                population_column = "population")
+
+
 
   ipc_data_survey <- ipc_data %>%
     as_survey_design(strata = "sampling_id", weights = weights) %>%
@@ -294,17 +309,42 @@ create_xlsx_group_x_variable(
 # 6. Final validation output
 # ──────────────────────────────────────────────────────────────────────────────
 
+notes <- read_excel(kobo_tool_name, sheet = "survey") %>%
+  filter(type == "note") %>%
+  pull(name)
+
 date_time_now <- format(Sys.time(), "%b_%d_%Y_%H%M%S")
 
 clean_data_output <- imap(clean_data, function(df, name) {
   if (name == "main") {
-    df
+    df$my_clean_data_final <- df$my_clean_data_final %>%
+      select(-matches(paste(notes, collapse = "|"))) %>%
+      rename(stratum = sampling_id,
+             weight = weights,
+             pop_group = camp_or_hc)
+
   } else {
     df$my_clean_data_final <- df$my_clean_data_final %>%
-      left_join(main_to_join, by = join_by(index == index))
-    df
-  }}
-  )
+      left_join(main_to_join, by = join_by(index == index)) %>%
+      select(-matches(paste(notes, collapse = "|"))) %>%
+      rename(stratum = sampling_id,
+             weight = weights,
+             pop_group = camp_or_hc)
+  }
+  df
+})
+
+
+clean_data_output$roster$my_clean_data_final <- clean_data_output$roster$my_clean_data_final %>%
+  mutate(person_id = "edf5eb0d-8f86-4fbb-9480-20e4d16a7d6a",
+         uuid = "edf5eb0d-8f86-4fbb-9480-20e4d16a7d6a")
+
+
+clean_data_output$roster$raw_data <- clean_data_output$roster$raw_data %>%
+  mutate(person_id = "edf5eb0d-8f86-4fbb-9480-20e4d16a7d6a",
+         uuid = "edf5eb0d-8f86-4fbb-9480-20e4d16a7d6a")
+
+
 
 ## at some point the list gets reordered. Put MAIN at the first so it exports more nicely.
 main <- list(main = clean_data_output[[5]])
@@ -313,7 +353,7 @@ clean_data_output[[5]] <- NULL
 clean_data_output <- append(clean_data_output, main, after = 0)
 
 
-variable_tracker <- imap(clean_data, function(x, name) {
+variable_tracker <- imap(clean_data_output, function(x, name) {
   ImpactFunctions::create_variable_tracker(x$raw_data, x$my_clean_data_final ) %>%
     mutate(sheet_name = name)})
 
@@ -322,7 +362,13 @@ variable_tracker_sheet <- bind_rows(variable_tracker) %>%
     str_detect(Variable, "under5|ind_dob") ~ "Removed due to data cleaning",
     str_detect(Variable, "fcs|hhs|lcsi|rcsi|fc") ~ "Added as part of FCS calcs",
     str_detect(Variable, "FCS") ~ "Old FCS overwritten",
-    str_detect(Variable, "weights") ~ "Added weight"))
+    str_detect(Variable, "weights") ~ "Added weight",
+    Variable %in% notes ~ "Blank column for note",
+    Variable %in% colnames(main_to_join) & sheet_name != "main" ~ "HH level metadata",
+    Variable == "dist_btn_sample_collected" ~ "Geospatial check removed",
+    Variable %in% c("stratum", "weight", "pop_group") ~ "Name change to match HQ requirements",
+    Variable %in% c("camp_or_hc", "weights", "sampling_id") ~ "Name change to match HQ requirements"
+  ))
 
 
 
